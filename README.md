@@ -1,62 +1,63 @@
-# ☁️ Storage ByAFR
+# Storage ByAFR
 
-Modern cloud storage web application — fast, secure, and elegant.  
-Built with Next.js 16 + Drizzle ORM + Cloudflare R2 + Redis.
+Modern cloud storage web application — fast, secure, and scalable.  
+Built with **Next.js 16**, **Drizzle ORM**, **Cloudflare R2**, and **Redis**.
 
 ---
 
-## Fitur
+## Features
 
-- **Manajemen File** — Upload, download, rename, duplicate, favorite, drag-and-drop folder
-- **Folder Upload** — Upload seluruh folder dengan struktur tetap (File System Access API + fallback webkitdirectory)
-- **Virtual Scrolling** — Render ribuan file tanpa lag (`@tanstack/react-virtual`)
-- **Multi-Select & Batch Actions** — Download, favorite, delete massal (parallel `Promise.all`)
-- **Tipe Filter** — Filter cepat: All / Images / Videos / Audio / Documents / Archives
-- **Sortable Columns** — Urutkan berdasarkan Name / Size / Modified / Type
-- **File Preview** — Preview gambar, video, audio, PDF, dokumen Office, SVG, teks (syntax highlight)
-- **Rich Text Notes** — Tiptap editor dengan auto-save
-- **Image Editor** — Crop, rotate, flip built-in
-- **Share Links** — Buat link share dengan expiry, batas akses, permission (view/edit), tracking access log (IP, device, browser, OS, lokasi)
-- **Recycle Bin** — Soft-delete, time grouping (Today/Yesterday/This Week/This Month/Older), batch restore/delete, search
-- **Favorites** — Tandai file favorit
-- **Pencarian** — Full-text search across files
-- **Admin Panel** — User management, impersonation, monitoring real-time, activity logs
-- **Keamanan** — Argon2id password hashing, CSRF token, rate limiting, magic byte validation, CSP headers, bot detection
-- **Background Jobs** — Thumbnail generation, image compression, media trimming via BullMQ
-- **Dark/Light Mode** — Theme kustom dengan persistensi localStorage
-- **Responsive** — Desktop-first dengan UI premium (Framer Motion, gradient, glow effects)
+- **File Management** — Upload, download, rename, duplicate, favorite, drag-and-drop folder organization
+- **Folder Upload** — Preserve full directory structure via File System Access API with `webkitdirectory` fallback
+- **Virtual Scrolling** — Render thousands of files without performance degradation (`@tanstack/react-virtual`)
+- **Multi-Select & Batch Actions** — Bulk download, favorite, and delete with parallel `Promise.all`
+- **Type Filtering** — Quick filters: All / Images / Videos / Audio / Documents / Archives
+- **Sortable Columns** — Sort by Name, Size, Modified date, or Type
+- **File Preview** — Inline preview for images, video, audio, PDF, Office documents, SVG, and syntax-highlighted text
+- **Rich Text Notes** — Tiptap editor with auto-save
+- **Image Editor** — Built-in crop, rotate, and flip tools
+- **Share Links** — Create shareable links with expiration, access limits, permissions (view/edit), and full access logging (IP, device, browser, OS, location)
+- **Recycle Bin** — Soft-delete with time grouping (Today / Yesterday / This Week / This Month / Older), batch restore and permanent delete
+- **Favorites** — Bookmark files for quick access
+- **Search** — Full-text search across all files
+- **Admin Panel** — User management, impersonation, real-time monitoring, activity logs
+- **Security** — Argon2id password hashing, CSRF protection, rate limiting, magic byte validation, CSP headers, bot detection
+- **Background Jobs** — Thumbnail generation, image compression, media processing via BullMQ
+- **Dark / Light Mode** — Custom theming with localStorage persistence
+- **Responsive Design** — Desktop-first with premium UI (Framer Motion, gradients, glow effects)
 
 ---
 
 ## Tech Stack
 
-| Layer | Teknologi |
+| Layer | Technology |
 |-------|-----------|
 | **Framework** | Next.js 16.2.10 (App Router) |
 | **Language** | TypeScript 5 |
 | **Database** | Neon PostgreSQL + Drizzle ORM 0.45 |
 | **Storage** | Cloudflare R2 (S3-compatible, presigned URLs) |
 | **Cache & Queue** | Redis + BullMQ 5 |
-| **Auth** | Session-based (Argon2id via `@node-rs/argon2`) |
+| **Authentication** | Session-based (Argon2id via `@node-rs/argon2`) |
 | **UI** | Tailwind CSS v4 + Framer Motion + Radix UI + Lucide Icons |
-| **Forms** | React Dropzone, React Easy Crop |
+| **File Upload** | React Dropzone |
+| **Image Cropping** | React Easy Crop |
 | **Virtual Scroll** | @tanstack/react-virtual |
 | **Rich Text** | Tiptap |
 | **Drag & Drop** | @dnd-kit |
 | **PDF** | react-pdf + pdfjs-dist |
 | **Charts** | Recharts |
-| **Deploy** | Docker Compose (multi-stage, Nginx reverse proxy) |
+| **Deployment** | Docker Compose (multi-stage, Nginx reverse proxy) |
 
 ---
 
-## Prasyarat
+## Prerequisites
 
 - **Node.js** ≥ 20.x
 - **npm** ≥ 10.x
-- **PostgreSQL** (Neon — serverless, atau lokal via Docker)
-- **Cloudflare R2 bucket** (atau S3-compatible lainnya)
-- **Redis** (opsional — bisa dinonaktifkan untuk development)
-- **Docker** (opsional, untuk deploy)
+- **PostgreSQL** (Neon — serverless, or local via Docker)
+- **Cloudflare R2 bucket** (or any S3-compatible provider)
+- **Redis** (optional — can be disabled for development)
+- **Docker** (optional, for deployment)
 
 ---
 
@@ -76,67 +77,65 @@ npm install
 cp .env.example .env
 ```
 
-Isi `.env` dengan konfigurasi berikut:
-
-| Variable | Wajib | Deskripsi |
-|----------|-------|-----------|
+| Variable | Required | Description |
+|----------|----------|-------------|
 | `DATABASE_URL` | ✅ | Neon PostgreSQL connection string |
 | `R2_ACCOUNT_ID` | ✅ | Cloudflare R2 Account ID |
 | `R2_ACCESS_KEY_ID` | ✅ | R2 Access Key |
 | `R2_SECRET_ACCESS_KEY` | ✅ | R2 Secret Access Key |
-| `R2_BUCKET_NAME` | ✅ | Nama bucket R2 |
-| `R2_PUBLIC_URL` | ✅ | Public URL bucket (dev: `https://pub-<hash>.r2.dev`) |
-| `SESSION_SECRET` | ✅ | Minimal 64 karakter random |
-| `MASTER_USERNAME` | ✅ | Username master admin |
-| `MASTER_PASSWORD` | ✅ | Password master admin |
+| `R2_BUCKET_NAME` | ✅ | R2 bucket name |
+| `R2_PUBLIC_URL` | ✅ | Bucket public URL (dev: `https://pub-<hash>.r2.dev`) |
+| `SESSION_SECRET` | ✅ | Minimum 64 random characters |
+| `MASTER_USERNAME` | ✅ | Master admin username |
+| `MASTER_PASSWORD` | ✅ | Master admin password |
 | `NEXT_PUBLIC_APP_URL` | ✅ | `http://localhost:3000` (dev) |
 | `REDIS_URL` | ✅ | `redis://localhost:6379` |
-| `REDIS_DISABLED` | ❌ | Set `true` jika tidak pakai Redis |
-| `MAX_FILE_SIZE_BYTES` | ❌ | Default 5GB (5368709120) |
-| `UPLOAD_URL_EXPIRY_SECONDS` | ❌ | Default 900 (15 menit) |
-| `DOWNLOAD_URL_EXPIRY_SECONDS` | ❌ | Default 60 (1 menit) |
-| `RATE_LIMIT_LOGIN_MAX` | ❌ | Default 5 percobaan |
-| `RATE_LIMIT_LOGIN_WINDOW_MS` | ❌ | Default 900000 (15 menit) |
+| `REDIS_DISABLED` | ❌ | Set `true` to run without Redis |
+| `MAX_FILE_SIZE_BYTES` | ❌ | Default 5GB (`5368709120`) |
+| `UPLOAD_URL_EXPIRY_SECONDS` | ❌ | Default 900 (15 minutes) |
+| `DOWNLOAD_URL_EXPIRY_SECONDS` | ❌ | Default 60 (1 minute) |
+| `RATE_LIMIT_LOGIN_MAX` | ❌ | Default 5 attempts |
+| `RATE_LIMIT_LOGIN_WINDOW_MS` | ❌ | Default 900000 (15 minutes) |
 
-### 3. Setup Database
+### 3. Database Setup
 
 ```bash
-# Push schema ke database
+# Push schema to database
 npm run db:push
 
-# Buat akun master (pertama kali saja)
+# Create master admin (first time only)
 npm run bootstrap
 
-# (Opsional) Reset password master
+# (Optional) Reset master password
 npm run reset-master-password
 ```
 
-### 4. Setup R2 CORS
+### 4. R2 CORS Configuration
 
-Akses Cloudflare Dashboard → R2 → Bucket → Settings → CORS.  
-Gunakan konfigurasi dari [`docker/r2-cors.json`](docker/r2-cors.json).
+Access Cloudflare Dashboard → R2 → Bucket → Settings → CORS.  
+Use the configuration from [`docker/r2-cors.json`](docker/r2-cors.json).
 
-Atau via Wrangler:
+Or via Wrangler:
 
 ```bash
 wrangler r2 bucket cors set strogebyafr --file docker/r2-cors.json
 ```
 
-### 5. Jalankan Development
+### 5. Start Development
 
 ```bash
 # Terminal 1: Next.js dev server
 npm run dev
 
-# Terminal 2: Worker (thumbnail, compression)
+# Terminal 2: Background worker (thumbnail, compression)
 npm run worker
 ```
 
-Akses di **http://localhost:3000**.
+Access at **http://localhost:3000**.
 
-> **Catatan:** Tanpa Redis, set `REDIS_DISABLED=true` di `.env` — jangan jalankan `npm run worker`.
+> **Note:** Without Redis, set `REDIS_DISABLED=true` in `.env` — do not run `npm run worker`.
 
-### Redis via Docker (opsional)
+### Redis via Docker (optional)
 
 ```bash
 docker compose -f docker/docker-compose.dev.yml up -d
@@ -146,7 +145,7 @@ docker compose -f docker/docker-compose.dev.yml up -d
 
 ## 🐳 Docker Deployment (Production)
 
-### Struktur Docker
+### Docker Structure
 
 ```
 docker/
@@ -158,54 +157,54 @@ docker/
 └── r2-cors.json             # R2 CORS template
 ```
 
-### Build & Jalankan
+### Build & Run
 
 ```bash
 cd docker
 docker compose up -d --build
 ```
 
-Ini akan menjalankan 4 service:
+This starts 4 services:
 
-| Service | Port | Fungsi |
-|---------|------|--------|
+| Service | Port | Role |
+|---------|------|------|
 | `app` | 3000 | Next.js server |
 | `worker` | — | BullMQ background job processor |
 | `redis` | 6379 | Cache + job queue |
-| `nginx` | 80/443 | Reverse proxy dengan SSL |
+| `nginx` | 80/443 | Reverse proxy with SSL |
 
 ---
 
-## 🖥️ Deploy ke VPS
+## 🖥️ VPS Deployment
 
-### Opsi 1: Docker Compose (Recommended)
+### Option 1: Docker Compose (Recommended)
 
 **Requirements:** Ubuntu 22.04+, Docker, Docker Compose.
 
 ```bash
-# 1. SSH ke VPS
+# 1. SSH into VPS
 ssh user@vps-ip
 
 # 2. Install Docker
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
-# Logout & login kembali
+# Logout & login again
 
 # 3. Clone project
 git clone <repo-url> /opt/storage-by-afr
 cd /opt/storage-by-afr
 
-# 4. Buat .env file
+# 4. Create .env file
 nano .env
-# Isi semua environment variables (lihat tabel di atas)
-# PASTIKAN: NEXT_PUBLIC_APP_URL=https://domain-anda.com
+# Fill all environment variables (see table above)
+# MAKE SURE: NEXT_PUBLIC_APP_URL=https://your-domain.com
 
-# 5. Build & jalankan
+# 5. Build & run
 cd docker
 docker compose up -d --build
 ```
 
-### Opsi 2: Manual (tanpa Docker)
+### Option 2: Manual (without Docker)
 
 **Requirements:** Node.js 20+, PM2, Nginx, Redis.
 
@@ -218,7 +217,7 @@ npm install sharp  # native module
 # 2. Build
 npm run build
 
-# 3. Setup PM2 ecosystem (buat file ecosystem.config.js)
+# 3. Setup PM2 ecosystem (create ecosystem.config.js)
 ```
 
 ```js
@@ -249,14 +248,14 @@ pm2 save
 pm2 startup
 ```
 
-### Konfigurasi Nginx
+### Nginx Configuration
 
-Buat file `/etc/nginx/sites-available/storage-by-afr`:
+Create `/etc/nginx/sites-available/storage-by-afr`:
 
 ```nginx
 server {
     listen 80;
-    server_name domain-anda.com;
+    server_name your-domain.com;
 
     client_max_body_size 10G;
     proxy_request_buffering off;
@@ -272,7 +271,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
 
-        # Timeout untuk upload besar
+        # Timeout for large uploads
         proxy_connect_timeout 300;
         proxy_send_timeout 300;
         proxy_read_timeout 300;
@@ -293,18 +292,18 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-### SSL dengan Let's Encrypt
+### SSL with Let's Encrypt
 
 ```bash
 sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d domain-anda.com
+sudo certbot --nginx -d your-domain.com
 ```
 
 ---
 
 ## 🔧 Environment Variables Reference
 
-Berkas `.env.example` berisi template lengkap. Berikut detail setiap variabel:
+File `.env.example` contains a complete template. Here is the full reference:
 
 ```env
 # ── Database ──────────────────────────────────────────────
@@ -319,7 +318,7 @@ R2_PUBLIC_URL=https://pub-xxxx.r2.dev
 
 # ── Redis ─────────────────────────────────────────────────
 REDIS_URL=redis://localhost:6379
-REDIS_DISABLED=true              # Set true jika tanpa Redis
+REDIS_DISABLED=true              # Set true if running without Redis
 
 # ── Session ───────────────────────────────────────────────
 SESSION_SECRET=change-this-to-a-random-64-character-string
@@ -333,8 +332,8 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 # ── Limits ────────────────────────────────────────────────
 MAX_FILE_SIZE_BYTES=5368709120   # 5GB
-UPLOAD_URL_EXPIRY_SECONDS=900    # 15 menit
-DOWNLOAD_URL_EXPIRY_SECONDS=60   # 1 menit
+UPLOAD_URL_EXPIRY_SECONDS=900    # 15 minutes
+DOWNLOAD_URL_EXPIRY_SECONDS=60   # 1 minute
 
 # ── Rate Limiting ─────────────────────────────────────────
 RATE_LIMIT_LOGIN_MAX=5
@@ -343,16 +342,16 @@ RATE_LIMIT_LOGIN_WINDOW_MS=900000
 
 ---
 
-## 📁 Arsitektur Proyek
+## 📁 Project Architecture
 
 ```
 storage-by-afr/
 ├── app/
-│   ├── (app)/              # Route group (tanpa layout tambahan)
-│   ├── (auth)/             # Route group untuk login
-│   ├── (shell)/            # Route group dengan AppShell (sidebar)
-│   ├── admin/              # Halaman admin + API routes
-│   ├── api/                # API routes (REST)
+│   ├── (app)/              # Route group (no additional layout)
+│   ├── (auth)/             # Route group for authentication
+│   ├── (shell)/            # Route group with AppShell (sidebar)
+│   ├── admin/              # Admin pages + API routes
+│   ├── api/                # REST API routes
 │   ├── dashboard/          # Dashboard page
 │   ├── favorites/          # Favorites page
 │   ├── files/              # File browser page
@@ -381,7 +380,7 @@ storage-by-afr/
 └── docker/                 # Docker Compose + config
 ```
 
-### Alur Data Upload
+### Upload Data Flow
 
 ```
 Browser ──presigned URL──► Cloudflare R2 ──complete──► Next.js API ──► Neon DB
@@ -389,15 +388,15 @@ Browser ──presigned URL──► Cloudflare R2 ──complete──► Next.
     └──(optional)────────────────────────────► BullMQ ──► Worker ──► Thumbnail
 ```
 
-### Keamanan Berlapis
+### Layered Security
 
-1. **Middleware** — Bot detection, session check, security headers (CSP, HSTS, etc.)
-2. **CSRF** — Token validation di setiap mutasi
-3. **Rate Limiting** — Login attempt, API abuse detection
-4. **File Validation** — Magic byte check (tidak hanya ekstensi)
-5. **Suspicious Activity** — Deteksi pattern mencurigakan
-6. **Argon2id** — Password hashing dengan salt otomatis
-7. **Presigned URLs** — File tidak langsung diakses, hanya via URL sementara
+1. **Middleware** — Bot detection, session validation, security headers (CSP, HSTS, etc.)
+2. **CSRF** — Token validation on every mutation
+3. **Rate Limiting** — Login attempt throttling, API abuse detection
+4. **File Validation** — Magic byte verification (not just extension check)
+5. **Suspicious Activity** — Pattern-based anomaly detection
+6. **Argon2id** — Password hashing with automatic salt
+7. **Presigned URLs** — Files are not directly accessible; temporary URLs only
 
 ---
 
@@ -405,66 +404,63 @@ Browser ──presigned URL──► Cloudflare R2 ──complete──► Next.
 
 ### Redis Error `[ioredis] Unhandled error event`
 
-Redis belum berjalan. Pilih salah satu:
+Redis is not running. Choose one:
 
-- **Opsi A (cepat):** Set `REDIS_DISABLED=true` di `.env` — cache & queue nonaktif, app tetap jalan
-- **Opsi B:** Jalankan Redis via Docker:
+- **Option A (quick):** Set `REDIS_DISABLED=true` in `.env` — cache & queue are disabled, app still works
+- **Option B:** Start Redis via Docker:
   ```bash
   docker compose -f docker/docker-compose.dev.yml up -d
   ```
-  Lalu hapus `REDIS_DISABLED` dari `.env`
+  Then remove `REDIS_DISABLED` from `.env`
 
-### Upload gagal / CORS error
+### Upload fails / CORS error
 
-Cloudflare R2 membutuhkan **CORS** agar browser bisa upload langsung.  
-Atur di R2 Dashboard → bucket → Settings → CORS.  
-Gunakan [`docker/r2-cors.json`](docker/r2-cors.json) dan tambahkan origin domain kamu.
+Cloudflare R2 requires **CORS** configuration for browser uploads.  
+Configure via R2 Dashboard → bucket → Settings → CORS.  
+Use [`docker/r2-cors.json`](docker/r2-cors.json) and add your origin domain.
 
 ### Worker error `ENOTFOUND redis`
 
-Worker memakai hostname `redis` (hanya valid di Docker network).  
-Untuk dev lokal: set `REDIS_DISABLED=true` di `.env` — jangan jalankan `npm run worker`.
+The worker uses the hostname `redis` (only valid inside Docker network).  
+For local development: set `REDIS_DISABLED=true` in `.env` — do not run `npm run worker`.
 
 ### Build Error `Type 'Redis' is not assignable to type 'ConnectionOptions'`
 
-Inkompatibilitas tipe antara `ioredis` dan `bullmq`.  
-Solusi: file `lib/queue/index.ts` sudah menggunakan `as unknown as import("bullmq").ConnectionOptions`.
+Type incompatibility between `ioredis` and `bullmq`.  
+Fix: `lib/queue/index.ts` already uses `as unknown as import("bullmq").ConnectionOptions`.
 
-### Login gagal setelah deploy
+### Login fails after deployment
 
-1. Pastikan sudah bootstrap: `npm run bootstrap`
-2. Reset password master sesuai `.env`: `npm run reset-master-password`
-3. Login dengan `MASTER_USERNAME` dan `MASTER_PASSWORD` dari `.env`
+1. Ensure bootstrap was run: `npm run bootstrap`
+2. Reset master password to match `.env`: `npm run reset-master-password`
+3. Login with `MASTER_USERNAME` and `MASTER_PASSWORD` from `.env`
 
-### Upload folder tidak mempertahankan struktur
+### Folder upload does not preserve structure
 
-`webkitRelativePath` tidak menyertakan nama folder induk.  
-Browser modern (Chrome/Edge) otomatis pakai `showDirectoryPicker()` yang benar.  
-Untuk fallback, folder diberi nama timestamp.
+`webkitRelativePath` excludes the parent folder name.  
+Modern browsers (Chrome/Edge) use `showDirectoryPicker()` which handles this correctly.  
+The fallback assigns a timestamp-based folder name.
 
 ---
 
-## Development
+## Development Commands
 
 ```bash
-# Commands
-npm run dev              # Development server
-npm run build            # Production build
-npm run start            # Start production server
-npm run lint             # ESLint check
-npm run db:generate      # Generate Drizzle migration
-npm run db:migrate       # Run migration
-npm run db:push          # Push schema (dev)
-npm run db:studio        # Drizzle Studio (GUI database)
-npm run bootstrap        # Create master admin
-npm run reset-master-password  # Reset master password
-npm run worker           # Start BullMQ worker
+npm run dev                   # Development server
+npm run build                 # Production build
+npm run start                 # Start production server
+npm run lint                  # ESLint check
+npm run db:generate           # Generate Drizzle migration
+npm run db:migrate            # Run migration
+npm run db:push               # Push schema (dev)
+npm run db:studio             # Drizzle Studio (GUI database)
+npm run bootstrap             # Create master admin
+npm run reset-master-password # Reset master password
+npm run worker                # Start BullMQ worker
 ```
 
 ---
 
-## Lisensi
+## License
 
 Private — All rights reserved.
-#   S t r o g e B y A F R  
- 
