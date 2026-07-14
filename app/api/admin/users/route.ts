@@ -77,7 +77,10 @@ const updateUserSchema = z.object({
   email: z.string().email().nullable().optional(),
   password: z.string().min(8).optional(),
   status: z.enum(["active", "suspended"]).optional(),
+  suspendReason: z.string().max(500).nullable().optional(),
+  mustChangePassword: z.boolean().optional(),
   quotaBytes: z.number().int().positive().optional(),
+  bandwidthQuotaBytes: z.number().int().min(0).optional(),
   role: z.enum(["user", "master"]).optional(),
 });
 
@@ -119,18 +122,41 @@ export async function PATCH(request: NextRequest) {
     const updates: Partial<typeof existing> = { updatedAt: new Date() };
     if (body.username) updates.username = body.username;
     if (body.email !== undefined) updates.email = body.email;
-    if (body.status) updates.status = body.status;
+    if (body.status) {
+      updates.status = body.status;
+      if (body.status === "active") {
+        updates.suspendReason = null;
+      } else if (body.status === "suspended") {
+        updates.suspendReason = body.suspendReason ?? existing.suspendReason ?? "Suspended by administrator";
+      }
+    }
+    if (body.suspendReason !== undefined && body.status !== "active") {
+      updates.suspendReason = body.suspendReason;
+    }
+    if (body.mustChangePassword !== undefined) {
+      updates.mustChangePassword = body.mustChangePassword;
+    }
     if (body.quotaBytes) updates.quotaBytes = body.quotaBytes;
+    if (body.bandwidthQuotaBytes !== undefined) updates.bandwidthQuotaBytes = body.bandwidthQuotaBytes;
     if (body.password) updates.passwordHash = await hashPassword(body.password);
     if (body.role) updates.role = body.role;
 
     await db.update(users).set(updates).where(eq(users.id, body.id));
 
-    await logActivity(master, "update_user", {
-      resourceType: "user",
-      resourceId: body.id,
-      ip,
-    });
+    if (body.status === "suspended") {
+      await logActivity(master, "suspend_user", {
+        resourceType: "user",
+        resourceId: body.id,
+        metadata: { reason: updates.suspendReason },
+        ip,
+      });
+    } else {
+      await logActivity(master, "update_user", {
+        resourceType: "user",
+        resourceId: body.id,
+        ip,
+      });
+    }
 
     return apiSuccess({ updated: true });
   } catch (error) {

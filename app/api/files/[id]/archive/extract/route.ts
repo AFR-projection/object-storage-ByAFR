@@ -1,10 +1,8 @@
 import { NextRequest } from "next/server";
-import { eq, and, isNull } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { files } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth/session";
-import { canAccessUserResource } from "@/lib/auth/permissions";
+import { getAccessibleFile } from "@/lib/auth/permissions";
 import { downloadFromR2Stream } from "@/lib/storage/r2";
+import { recordBandwidth, BandwidthQuotaError } from "@/lib/billing/bandwidth";
 import { apiError, handleApiError } from "@/lib/api/response";
 import JSZip from "jszip";
 
@@ -41,15 +39,11 @@ export async function GET(
       return apiError("Missing path parameter", 400);
     }
 
-    const [file] = await db
-      .select()
-      .from(files)
-      .where(and(eq(files.id, id), isNull(files.deletedAt)))
-      .limit(1);
-
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
+    const accessible = await getAccessibleFile(sessionUser, id);
+    if (!accessible?.canView) {
       return apiError("File not found", 404);
     }
+    const file = accessible.file;
 
     const r2 = await downloadFromR2Stream(file.r2Key);
     if (!r2.body) {
@@ -85,6 +79,15 @@ export async function GET(
     const content = await entry.async("uint8array");
     const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
     const mime = getMime(ext);
+
+    try {
+      await recordBandwidth(file.userId, content.length);
+    } catch (err) {
+      if (err instanceof BandwidthQuotaError) {
+        return apiError("BANDWIDTH_QUOTA_EXCEEDED", 429);
+      }
+      throw err;
+    }
 
     const headers = new Headers();
     headers.set("Content-Type", mime);

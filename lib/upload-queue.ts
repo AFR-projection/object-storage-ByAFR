@@ -1,5 +1,7 @@
 "use client";
 
+import { encryptFile, type EncryptionMetaV1 } from "@/lib/crypto/client-encryption";
+
 export interface UploadItem {
   id: string;
   file: File;
@@ -11,6 +13,7 @@ export interface UploadItem {
   error?: string;
   fileId?: string;
   retries: number;
+  encrypted?: boolean;
 }
 
 export interface UploadStats {
@@ -66,8 +69,13 @@ export class UploadQueue {
   private activeCount = 0;
   private paused = false;
   private speedSamples: number[] = [];
-  private lastLoadedBytes = 0;
-  private lastSpeedTime = 0;
+  private encryptEnabled = false;
+  private encryptPassphrase: string | null = null;
+
+  setEncryption(enabled: boolean, passphrase: string | null) {
+    this.encryptEnabled = enabled;
+    this.encryptPassphrase = passphrase;
+  }
 
   on<K extends keyof UploadQueueEvents>(event: K, cb: UploadQueueEvents[K]) {
     this.listeners[event] = cb;
@@ -115,6 +123,7 @@ export class UploadQueue {
         progress: 0,
         speed: 0,
         retries: 0,
+        encrypted: this.encryptEnabled,
       });
     }
     this.notify();
@@ -132,6 +141,7 @@ export class UploadQueue {
         progress: 0,
         speed: 0,
         retries: 0,
+        encrypted: this.encryptEnabled,
       });
     }
     this.notify();
@@ -151,7 +161,6 @@ export class UploadQueue {
         }
       }
       if (!next) break;
-      // Move to front for visual consistency
       if (nextIdx > 0) {
         this.items.splice(nextIdx, 1);
         this.items.unshift(next);
@@ -172,11 +181,27 @@ export class UploadQueue {
     this.notify();
 
     try {
+      const shouldEncrypt = !!(item.encrypted && this.encryptPassphrase);
+      let uploadBlob: Blob = item.file;
+      let uploadSize = item.file.size;
+      let uploadMime = item.file.type || "application/octet-stream";
+      let encryptionMeta: EncryptionMetaV1 | undefined;
+
+      if (shouldEncrypt) {
+        const encrypted = await encryptFile(item.file, this.encryptPassphrase!);
+        uploadBlob = encrypted.blob;
+        uploadSize = encrypted.sizeBytes;
+        uploadMime = "application/octet-stream";
+        encryptionMeta = encrypted.meta;
+      }
+
       const presign = await apiPost<{ fileId: string; uploadUrl: string }>("/api/upload/presign", {
         filename: item.file.name,
         mimeType: item.file.type || "application/octet-stream",
-        sizeBytes: item.file.size,
+        sizeBytes: uploadSize,
         folderId: item.folderId,
+        encrypted: shouldEncrypt,
+        encryptionMeta,
       });
 
       if (!presign.success || !presign.data) {
@@ -188,9 +213,8 @@ export class UploadQueue {
 
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        const startTime = Date.now();
         let lastLoaded = 0;
-        let lastTime = startTime;
+        let lastTime = Date.now();
 
         xhr.upload.addEventListener("progress", (e) => {
           if (e.lengthComputable) {
@@ -217,13 +241,18 @@ export class UploadQueue {
         xhr.addEventListener("error", () => reject(new Error("Network error")));
         xhr.addEventListener("abort", () => reject(new Error("Cancelled")));
         xhr.open("PUT", uploadUrl);
-        xhr.setRequestHeader("Content-Type", item.file.type || "application/octet-stream");
-        xhr.send(item.file);
+        xhr.setRequestHeader("Content-Type", uploadMime);
+        xhr.send(uploadBlob);
 
-        (item as any)._xhr = xhr;
+        (item as UploadItem & { _xhr?: XMLHttpRequest })._xhr = xhr;
       });
 
-      const complete = await apiPost<{ fileId: string; name: string }>("/api/upload/complete", { fileId });
+      const complete = await apiPost<{ fileId: string; name: string }>("/api/upload/complete", {
+        fileId,
+        encrypted: shouldEncrypt,
+        encryptionMeta,
+        originalMimeType: shouldEncrypt ? item.file.type || "application/octet-stream" : undefined,
+      });
       if (!complete.success) {
         throw new Error(complete.error ?? "Upload tidak dapat diselesaikan");
       }
@@ -254,7 +283,7 @@ export class UploadQueue {
     const item = this.items.find((i) => i.id === id);
     if (!item) return;
     if (item.status === "uploading") {
-      const xhr = (item as any)._xhr;
+      const xhr = (item as UploadItem & { _xhr?: XMLHttpRequest })._xhr;
       if (xhr) xhr.abort();
       if (item.fileId) {
         apiPost("/api/upload/cancel", { fileId: item.fileId }).catch(() => {});

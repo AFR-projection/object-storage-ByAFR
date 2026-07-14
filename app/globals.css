@@ -240,6 +240,29 @@ body {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-6px); }
 }
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+@keyframes orbit-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes core-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1); }
+}
+@keyframes status-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+@keyframes page-progress-run {
+  0% { transform: scaleX(0.08) translateX(0); }
+  40% { transform: scaleX(0.45) translateX(40%); }
+  100% { transform: scaleX(0.85) translateX(15%); }
+}
+@keyframes text-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
 
 .animate-fade-in {
   animation: fade-in 0.3s ease forwards;
@@ -254,6 +277,49 @@ body {
 }
 .animate-float {
   animation: float 3s ease-in-out infinite;
+}
+.animate-spin-slow {
+  animation: spin-slow 1.15s linear infinite;
+}
+
+/* ── System loading / connection ── */
+.loading-orbit-spin {
+  animation: orbit-spin 0.9s linear infinite;
+}
+.loading-core {
+  animation: core-breathe 1.4s ease-in-out infinite;
+}
+.loading-text-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--foreground) 40%,
+    var(--muted-foreground) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: text-shimmer 1.6s linear infinite;
+}
+.status-dot-pulse,
+.status-dot-live {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.status-dot-pulse {
+  animation: status-pulse 1s ease-in-out infinite;
+}
+.status-dot-live {
+  box-shadow: 0 0 0 0 currentColor;
+  animation: status-pulse 1.6s ease-in-out infinite;
+}
+.page-progress-active {
+  animation: page-progress-run 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: left center;
 }
 
 /* ── Skeleton Loading ── */
@@ -277,6 +343,16 @@ body {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+  .loading-text-shimmer {
+    color: var(--muted-foreground);
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+  }
+  .page-progress-active {
+    animation: none !important;
+    transform: scaleX(0.6);
   }
 }
 

@@ -5,7 +5,7 @@ export interface PasswordPolicyResult {
   suggestions: string[];
 }
 
-const MIN_LENGTH = 8;
+const MIN_LENGTH = 10;
 const MAX_LENGTH = 128;
 const COMMON_PASSWORDS = new Set([
   "password", "123456", "12345678", "qwerty", "abc123", "monkey", "master",
@@ -53,13 +53,17 @@ export function validatePasswordStrength(password: string): PasswordPolicyResult
     }
   }
 
-  // Character variety
+  // Character variety — require at least 3 types
   const hasLower = /[a-z]/.test(password);
   const hasUpper = /[A-Z]/.test(password);
   const hasDigit = /[0-9]/.test(password);
   const hasSpecial = /[^a-zA-Z0-9]/.test(password);
 
   const charTypes = [hasLower, hasUpper, hasDigit, hasSpecial].filter(Boolean).length;
+
+  if (charTypes < 3) {
+    errors.push("Password must include at least 3 of: lowercase, uppercase, number, special character");
+  }
 
   if (charTypes >= 3) score += 1;
   if (charTypes >= 4) score += 1;
@@ -115,3 +119,13 @@ export function getPasswordStrengthColor(score: number): string {
     default: return "text-gray-500";
   }
 }
+
+/** Human-readable rules for register / change-password forms. */
+export function getPasswordPolicyRules(): string[] {
+  return [
+    `At least ${MIN_LENGTH} characters (12+ recommended)`,
+    "At least 3 of: lowercase, uppercase, number, special character",
+    "Not a common or predictable password",
+  ];
+}
+

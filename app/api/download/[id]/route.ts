@@ -1,11 +1,9 @@
 import { NextRequest } from "next/server";
-import { eq, and, isNull } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { files } from "@/lib/db/schema";
 import { requireAuth, getClientIp } from "@/lib/auth/session";
-import { canAccessUserResource } from "@/lib/auth/permissions";
+import { getAccessibleFile } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
 import { getPresignedDownloadUrl, objectExists } from "@/lib/storage/r2";
+import { recordBandwidth, BandwidthQuotaError } from "@/lib/billing/bandwidth";
 import { apiError, handleApiError } from "@/lib/api/response";
 
 // Dangerous extensions that should NEVER be rendered inline, always forced download
@@ -34,12 +32,10 @@ function getExtension(filename: string): string {
 function getSafeMimeType(mimeType: string, filename: string): string {
   const ext = getExtension(filename);
 
-  // For executable/dangerous extensions, force download regardless of claimed MIME
   if (FORCED_DOWNLOAD_EXTENSIONS.has(ext)) {
     return "application/octet-stream";
   }
 
-  // For SVG, never serve as image/svg+xml (XSS risk) - force download
   if (mimeType === "image/svg+xml" || ext === "svg") {
     return "application/octet-stream";
   }
@@ -56,15 +52,11 @@ export async function GET(
     const { id } = await params;
     const ip = getClientIp(request);
 
-    const [file] = await db
-      .select()
-      .from(files)
-      .where(and(eq(files.id, id), isNull(files.deletedAt)))
-      .limit(1);
-
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
+    const accessible = await getAccessibleFile(sessionUser, id);
+    if (!accessible?.canView) {
       return apiError("File not found", 404);
     }
+    const file = accessible.file;
 
     if (file.isNote || file.r2Key.startsWith("notes/")) {
       return apiError("Notes cannot be downloaded as files", 400);
@@ -73,6 +65,15 @@ export async function GET(
     const exists = await objectExists(file.r2Key);
     if (!exists) {
       return apiError("File belum ter-upload ke storage atau sudah hilang", 404);
+    }
+
+    try {
+      await recordBandwidth(file.userId, file.sizeBytes);
+    } catch (err) {
+      if (err instanceof BandwidthQuotaError) {
+        return apiError("BANDWIDTH_QUOTA_EXCEEDED", 429);
+      }
+      throw err;
     }
 
     await logActivity(sessionUser, "download", {
@@ -85,14 +86,12 @@ export async function GET(
     const url = await getPresignedDownloadUrl(file.r2Key);
     const response = Response.redirect(url, 302);
 
-    // Clone response to add security headers
     const newResponse = new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,
     });
 
-    // Force download for dangerous files - prevents inline execution
     const safeMimeType = getSafeMimeType(file.mimeType, file.name);
     const ext = getExtension(file.name);
 
@@ -101,7 +100,6 @@ export async function GET(
       newResponse.headers.set("Content-Disposition", `attachment; filename="${file.name}"`);
     }
 
-    // NEVER serve executable content inline
     newResponse.headers.set("X-Content-Type-Options", "nosniff");
 
     return newResponse;

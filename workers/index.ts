@@ -5,10 +5,11 @@ import sharp from "sharp";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { createHmac } from "crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../lib/db/schema";
-import { files } from "../lib/db/schema";
+import { files, webhooks } from "../lib/db/schema";
 import { QUEUE_NAME } from "../lib/queue";
 
 const execFileAsync = promisify(execFile);
@@ -280,29 +281,72 @@ async function trimMedia(
   }
 }
 
+async function deliverWebhook(data: {
+  webhookId: string;
+  url: string;
+  secret: string;
+  body: string;
+}) {
+  const signature = createHmac("sha256", data.secret).update(data.body).digest("hex");
+  const res = await fetch(data.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Webhook-Signature": `sha256=${signature}`,
+      "User-Agent": "StrogeByAFR-Webhook/1.0",
+    },
+    body: data.body,
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  await db
+    .update(webhooks)
+    .set({
+      lastDeliveryAt: new Date(),
+      lastStatus: res.status,
+    })
+    .where(eq(webhooks.id, data.webhookId));
+
+  if (!res.ok) {
+    throw new Error(`Webhook delivery failed: HTTP ${res.status}`);
+  }
+}
+
 const worker = new Worker(
   QUEUE_NAME,
   async (job) => {
-    const { type, fileId, r2Key, mimeType, startSeconds, endSeconds } = job.data as {
+    const data = job.data as {
       type: string;
-      fileId: string;
-      r2Key: string;
-      mimeType: string;
+      fileId?: string;
+      r2Key?: string;
+      mimeType?: string;
       startSeconds?: number;
       endSeconds?: number;
+      webhookId?: string;
+      url?: string;
+      secret?: string;
+      body?: string;
     };
 
-    switch (type) {
+    switch (data.type) {
       case "generate_thumbnail":
-        await generateThumbnail(fileId, r2Key, mimeType);
+        await generateThumbnail(data.fileId!, data.r2Key!, data.mimeType!);
         break;
       case "compress_image":
-        await compressImage(fileId, r2Key, mimeType);
+        await compressImage(data.fileId!, data.r2Key!, data.mimeType!);
         break;
       case "trim_media":
-        if (startSeconds !== undefined && endSeconds !== undefined) {
-          await trimMedia(fileId, r2Key, mimeType, startSeconds, endSeconds);
+        if (data.startSeconds !== undefined && data.endSeconds !== undefined) {
+          await trimMedia(data.fileId!, data.r2Key!, data.mimeType!, data.startSeconds, data.endSeconds);
         }
+        break;
+      case "deliver_webhook":
+        await deliverWebhook({
+          webhookId: data.webhookId!,
+          url: data.url!,
+          secret: data.secret!,
+          body: data.body!,
+        });
         break;
     }
   },

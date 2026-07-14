@@ -10,6 +10,7 @@ const ROTATION_INTERVAL_MS = 1000 * 60 * 60 * 24; // 24 hours
 export type SessionUser = User & {
   effectiveUserId: string;
   isImpersonating: boolean;
+  sessionId: string;
 };
 
 export async function createSession(
@@ -122,6 +123,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     ...user,
     effectiveUserId,
     isImpersonating: !!session.impersonatingUserId,
+    sessionId: session.id,
   };
 }
 

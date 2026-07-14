@@ -41,7 +41,8 @@ export type JobType =
   | "generate_thumbnail"
   | "compress_image"
   | "trim_media"
-  | "recalculate_quota";
+  | "recalculate_quota"
+  | "deliver_webhook";
 
 export async function enqueueJob(
   type: JobType,

@@ -3,6 +3,7 @@ node_modules/
 *.tsbuildinfo
 .next.d.ts
 out/
+.env
 .env.local
 .env.production
 .env.development.local

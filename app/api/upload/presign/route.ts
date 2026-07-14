@@ -3,8 +3,9 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { files, users } from "@/lib/db/schema";
-import { requireAuth, getClientIp } from "@/lib/auth/session";
-import { getEffectiveUserId } from "@/lib/auth/permissions";
+import { getClientIp } from "@/lib/auth/session";
+import { requireAuthOrApiKey } from "@/lib/auth/api-key";
+import { getEffectiveUserId, resolveFolderAccess } from "@/lib/auth/permissions";
 import {
   buildR2Key,
   getPresignedUploadUrl,
@@ -13,11 +14,19 @@ import {
 import { validateCsrf, checkRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
+const encryptionMetaSchema = z.object({
+  salt: z.string().min(1),
+  iv: z.string().min(1),
+  version: z.literal(1),
+});
+
 const schema = z.object({
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1),
   sizeBytes: z.number().int().positive(),
   folderId: z.string().uuid().nullable().optional(),
+  encrypted: z.boolean().optional(),
+  encryptionMeta: encryptionMetaSchema.optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -26,7 +35,7 @@ export async function POST(request: NextRequest) {
       return apiError("Invalid CSRF token", 403);
     }
 
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(request, ["upload"]);
     const userId = getEffectiveUserId(sessionUser);
     const ip = getClientIp(request);
 
@@ -35,8 +44,17 @@ export async function POST(request: NextRequest) {
 
     const body = schema.parse(await request.json());
 
+    if (body.encrypted && !body.encryptionMeta) {
+      return apiError("encryptionMeta required when encrypted", 400);
+    }
+
     if (body.sizeBytes > getMaxFileSize()) {
       return apiError("File exceeds maximum size", 400);
+    }
+
+    if (body.folderId) {
+      const access = await resolveFolderAccess(sessionUser, body.folderId);
+      if (!access?.canEdit) return apiError("Folder not found", 404);
     }
 
     const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -52,17 +70,25 @@ export async function POST(request: NextRequest) {
         userId,
         folderId: body.folderId ?? null,
         name: body.filename,
-        mimeType: body.mimeType,
+        mimeType: body.encrypted ? "application/octet-stream" : body.mimeType,
         sizeBytes: body.sizeBytes,
         r2Key: "pending",
         checksumSha256: null,
+        encrypted: body.encrypted ?? false,
+        encryptionMeta: body.encryptionMeta ?? null,
       })
       .returning();
 
     const r2Key = buildR2Key(userId, file.id, body.filename);
     await db.update(files).set({ r2Key }).where(eq(files.id, file.id));
 
-    const uploadUrl = await getPresignedUploadUrl(r2Key, body.mimeType, body.sizeBytes);
+    const uploadUrl = await getPresignedUploadUrl(
+      r2Key,
+      body.encrypted ? "application/octet-stream" : body.mimeType,
+      body.sizeBytes
+    );
+
+    void ip;
 
     return apiSuccess({
       fileId: file.id,

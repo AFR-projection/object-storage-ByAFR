@@ -1,14 +1,15 @@
 import { NextRequest } from "next/server";
-import { eq, and, isNull, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { files, shares } from "@/lib/db/schema";
 import { requireAuth, getClientIp } from "@/lib/auth/session";
-import { canAccessUserResource } from "@/lib/auth/permissions";
+import { getAccessibleFile } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { dispatchWebhookEvent } from "@/lib/webhooks/dispatch";
 
 const createSchema = z.object({
   fileId: z.string().uuid(),
@@ -25,15 +26,11 @@ export async function POST(request: NextRequest) {
     const body = createSchema.parse(await request.json());
     const ip = getClientIp(request);
 
-    const [file] = await db
-      .select()
-      .from(files)
-      .where(and(eq(files.id, body.fileId), isNull(files.deletedAt)))
-      .limit(1);
-
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
+    const accessible = await getAccessibleFile(sessionUser, body.fileId);
+    if (!accessible?.canView) {
       return apiError("File not found", 404);
     }
+    const file = accessible.file;
 
     const token = nanoid(32);
     const expiresAt = body.expiresInMinutes
@@ -58,6 +55,13 @@ export async function POST(request: NextRequest) {
       metadata: { token },
       ip,
     });
+
+    dispatchWebhookEvent(file.userId, "share", {
+      fileId: body.fileId,
+      name: file.name,
+      shareId: share.id,
+      permission: body.permission,
+    }).catch(() => {});
 
     const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL}/shared/${token}`;
     return apiSuccess({ share, shareUrl });

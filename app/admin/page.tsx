@@ -10,6 +10,11 @@ import {
   Download, FolderOpen, Clock, Shield, TrendingUp, AlertCircle,
   CheckCircle, XCircle, BarChart3, Zap, Database, Server,
 } from "lucide-react";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
+} from "recharts";
+import Link from "next/link";
 
 interface AdminStats {
   users: { total: number; active: number; suspended: number };
@@ -37,6 +42,9 @@ interface AdminStats {
     createdAt: string;
     metadata: unknown;
   }>;
+  storageGrowth?: Array<{ day: string; uploads: number; bytes: number }>;
+  byMime?: Array<{ mimeType: string; category: string; count: number; bytes: number }>;
+  byCategory?: Array<{ category: string; count: number; bytes: number }>;
 }
 
 const actionIcons: Record<string, typeof Upload> = {
@@ -60,6 +68,8 @@ const actionColors: Record<string, string> = {
   share: "bg-pink-500/10 text-pink-500",
   impersonate: "bg-orange-500/10 text-orange-500",
 };
+
+const MIME_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444", "#64748b"];
 
 export default function AdminOverviewPage() {
   const { data: stats, isLoading } = useQuery({
@@ -216,6 +226,122 @@ export default function AdminOverviewPage() {
         </Card>
       </motion.div>
 
+      {/* Growth 30d + MIME breakdown */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.42 }}
+        >
+          <Card className="border-border/50 h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                Upload growth (30 days)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(stats?.storageGrowth?.length ?? 0) > 0 ? (
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={stats!.storageGrowth}>
+                      <defs>
+                        <linearGradient id="uploadFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border/40" />
+                      <XAxis
+                        dataKey="day"
+                        tickFormatter={(v) => String(v).slice(5)}
+                        tick={{ fontSize: 10 }}
+                        className="text-muted-foreground"
+                      />
+                      <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 12, border: "1px solid hsl(var(--border))" }}
+                        formatter={(value) => [Number(value), "Uploads"]}
+                        labelFormatter={(l) => String(l)}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="uploads"
+                        stroke="hsl(var(--accent))"
+                        fill="url(#uploadFill)"
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-muted-foreground">No upload activity yet</p>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.44 }}
+        >
+          <Card className="border-border/50 h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Database className="h-4 w-4 text-muted-foreground" />
+                Storage by type
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(stats?.byCategory?.length ?? 0) > 0 ? (
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="h-48 w-full sm:w-1/2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={stats!.byCategory}
+                          dataKey="bytes"
+                          nameKey="category"
+                          innerRadius={48}
+                          outerRadius={72}
+                          paddingAngle={2}
+                        >
+                          {stats!.byCategory!.map((_, i) => (
+                            <Cell key={i} fill={MIME_COLORS[i % MIME_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value) => formatBytes(Number(value))}
+                          contentStyle={{ borderRadius: 12, border: "1px solid hsl(var(--border))" }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex-1 space-y-2 w-full">
+                    {stats!.byCategory!.map((c, i) => (
+                      <div key={c.category} className="flex items-center justify-between text-sm gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full shrink-0"
+                            style={{ background: MIME_COLORS[i % MIME_COLORS.length] }}
+                          />
+                          <span className="truncate">{c.category}</span>
+                          <span className="text-xs text-muted-foreground">({c.count})</span>
+                        </div>
+                        <span className="text-muted-foreground shrink-0">{formatBytes(c.bytes)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-muted-foreground">No files yet</p>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
       {/* Top Users & Recent Activity */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Top Users */}
@@ -248,7 +374,12 @@ export default function AdminOverviewPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium truncate">{user.username}</span>
+                          <Link
+                            href={`/admin/users/${user.id}`}
+                            className="text-sm font-medium truncate hover:underline"
+                          >
+                            {user.username}
+                          </Link>
                           <span className="text-xs text-muted-foreground">{formatBytes(user.usedBytes)}</span>
                         </div>
                         <div className="h-1.5 overflow-hidden rounded-full bg-muted/50">

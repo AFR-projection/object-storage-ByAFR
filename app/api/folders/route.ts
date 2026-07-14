@@ -4,7 +4,12 @@ import { z } from "zod";
 import { db, recalculateUsedBytes } from "@/lib/db";
 import { folders, files } from "@/lib/db/schema";
 import { requireAuth, getClientIp } from "@/lib/auth/session";
-import { getEffectiveUserId, canAccessUserResource } from "@/lib/auth/permissions";
+import {
+  getEffectiveUserId,
+  canAccessUserResource,
+  listAccessibleFolders,
+  resolveFolderAccess,
+} from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf, SECURITY_HEADERS } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
@@ -18,7 +23,7 @@ async function buildPath(parentId: string | null, name: string, userId: string) 
   const [parent] = await db
     .select()
     .from(folders)
-    .where(and(eq(folders.id, parentId), eq(folders.userId, userId), isNull(folders.deletedAt)))
+    .where(and(eq(folders.id, parentId), isNull(folders.deletedAt)))
     .limit(1);
 
   if (!parent) throw new Error("Parent folder not found");
@@ -31,29 +36,14 @@ async function buildPath(parentId: string | null, name: string, userId: string) 
 export async function GET(request: NextRequest) {
   try {
     const sessionUser = await requireAuth();
-    const userId = getEffectiveUserId(sessionUser);
     const parentId = request.nextUrl.searchParams.get("parentId");
     const trash = request.nextUrl.searchParams.get("trash") === "true";
 
-    const conditions = [eq(folders.userId, userId)];
-
-    if (trash) {
-      conditions.push(isNotNull(folders.deletedAt));
-    } else {
-      conditions.push(isNull(folders.deletedAt));
-    }
-
-    if (parentId) {
-      conditions.push(eq(folders.parentId, parentId));
-    } else if (!trash) {
-      conditions.push(isNull(folders.parentId));
-    }
-
-    const result = await db
-      .select()
-      .from(folders)
-      .where(and(...conditions))
-      .orderBy(desc(folders.createdAt));
+    const result = await listAccessibleFolders(
+      sessionUser,
+      parentId || null,
+      trash
+    );
 
     return NextResponse.json(
       { success: true, data: { folders: result } },
@@ -83,14 +73,21 @@ export async function POST(request: NextRequest) {
     const body = createSchema.parse(await request.json());
     const ip = getClientIp(request);
 
-    cacheDelPattern(`search:${userId}:*`).catch(() => {});
+    let ownerId = userId;
+    if (body.parentId) {
+      const access = await resolveFolderAccess(sessionUser, body.parentId);
+      if (!access?.canEdit) return apiError("Parent folder not found", 404);
+      ownerId = access.folder.userId;
+    }
 
-    const { materializedPath, depth } = await buildPath(body.parentId ?? null, body.name, userId);
+    cacheDelPattern(`search:${ownerId}:*`).catch(() => {});
+
+    const { materializedPath, depth } = await buildPath(body.parentId ?? null, body.name, ownerId);
 
     const [folder] = await db
       .insert(folders)
       .values({
-        userId,
+        userId: ownerId,
         parentId: body.parentId ?? null,
         name: body.name,
         materializedPath,

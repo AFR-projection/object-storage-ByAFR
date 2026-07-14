@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -33,8 +33,11 @@ interface AdminUser {
   email: string | null;
   role: string;
   status: string;
+  suspendReason?: string | null;
+  mustChangePassword?: boolean;
   quotaBytes: number;
   usedBytes: number;
+  bandwidthQuotaBytes?: number;
   createdAt: string;
 }
 
@@ -43,11 +46,27 @@ export default function AdminUsersPage() {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
-  const [editForm, setEditForm] = useState({ username: "", email: "", password: "", quotaGB: 10 });
+  const [editForm, setEditForm] = useState({
+    username: "",
+    email: "",
+    password: "",
+    quotaGB: 10,
+    mustChangePassword: false,
+    bandwidthQuotaGB: 0,
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [form, setForm] = useState({ username: "", email: "", password: "", quotaGB: 10 });
   const [formError, setFormError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
+
+  // Load default quota from admin settings
+  useEffect(() => {
+    apiFetch<{ defaultQuotaGB: number }>("/api/admin/settings").then((res) => {
+      if (res.success && res.data?.defaultQuotaGB) {
+        setForm((f) => ({ ...f, quotaGB: res.data!.defaultQuotaGB }));
+      }
+    });
+  }, []);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -103,9 +122,18 @@ export default function AdminUsersPage() {
     setActionLoading(id);
     setActionError("");
     try {
+      let suspendReason: string | undefined;
+      if (status === "suspended") {
+        const reason = window.prompt("Suspension reason (shown to the user on login):", "Policy violation");
+        if (reason === null) {
+          setActionLoading(null);
+          return;
+        }
+        suspendReason = reason.trim() || "Suspended by administrator";
+      }
       const res = await apiFetch("/api/admin/users", {
         method: "PATCH",
-        body: JSON.stringify({ id, status }),
+        body: JSON.stringify({ id, status, suspendReason: suspendReason ?? null }),
       });
       if (!res.success) {
         setActionError(res.error ?? "Failed to update status");
@@ -149,6 +177,8 @@ export default function AdminUsersPage() {
       email: user.email ?? "",
       password: "",
       quotaGB: Math.round(user.quotaBytes / 1073741824),
+      mustChangePassword: !!user.mustChangePassword,
+      bandwidthQuotaGB: Math.round((user.bandwidthQuotaBytes ?? 0) / 1073741824),
     });
   }
 
@@ -162,6 +192,8 @@ export default function AdminUsersPage() {
         username: editForm.username || undefined,
         email: editForm.email || undefined,
         quotaBytes: editForm.quotaGB * 1073741824,
+        mustChangePassword: editForm.mustChangePassword,
+        bandwidthQuotaBytes: editForm.bandwidthQuotaGB * 1073741824,
       };
       if (editForm.password) body.password = editForm.password;
       const res = await apiFetch("/api/admin/users", {
@@ -477,6 +509,30 @@ export default function AdminUsersPage() {
                   onChange={(e) => setEditForm({ ...editForm, quotaGB: parseInt(e.target.value) || 10 })}
                 />
               </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-foreground/80">
+                  Bandwidth quota / month (GB, 0 = unlimited)
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editForm.bandwidthQuotaGB}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, bandwidthQuotaGB: parseInt(e.target.value) || 0 })
+                  }
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={editForm.mustChangePassword}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, mustChangePassword: e.target.checked })
+                  }
+                  className="rounded"
+                />
+                Force password reset on next login
+              </label>
               {actionError && (
                 <p className="text-sm text-red-500">{actionError}</p>
               )}

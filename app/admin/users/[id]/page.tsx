@@ -24,6 +24,8 @@ interface UserDetail {
     status: string;
     quotaBytes: number;
     usedBytes: number;
+    mustChangePassword?: boolean;
+    bandwidthQuotaBytes?: number;
     createdAt: string;
     updatedAt: string;
   };
@@ -80,7 +82,14 @@ export default function UserDetailPage({
   const router = useRouter();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ username: "", email: "", password: "", quotaGB: 10 });
+  const [form, setForm] = useState({
+    username: "",
+    email: "",
+    password: "",
+    quotaGB: 10,
+    bandwidthGB: 0,
+    mustChangePassword: false,
+  });
   const [saving, setSaving] = useState(false);
   const [pwNew, setPwNew] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
@@ -122,6 +131,8 @@ export default function UserDetailPage({
         username: form.username || undefined,
         email: form.email || undefined,
         quotaBytes: form.quotaGB * 1073741824,
+        bandwidthQuotaBytes: form.bandwidthGB * 1073741824,
+        mustChangePassword: form.mustChangePassword,
       };
       if (form.password) body.password = form.password;
       const res = await apiFetch(`/api/admin/users/${user.id}`, {
@@ -219,6 +230,8 @@ export default function UserDetailPage({
                   email: user.email ?? "",
                   password: "",
                   quotaGB: Math.round(user.quotaBytes / 1073741824),
+                  bandwidthGB: Math.round((user.bandwidthQuotaBytes ?? 0) / 1073741824),
+                  mustChangePassword: user.mustChangePassword ?? false,
                 });
                 setEditing(true);
               }
@@ -488,7 +501,25 @@ export default function UserDetailPage({
                       onChange={(e) => setForm({ ...form, quotaGB: parseInt(e.target.value) || 10 })}
                     />
                   </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-foreground/80">Bandwidth (GB, 0 = unlimited)</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={form.bandwidthGB}
+                      onChange={(e) => setForm({ ...form, bandwidthGB: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
                 </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.mustChangePassword}
+                    onChange={(e) => setForm({ ...form, mustChangePassword: e.target.checked })}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  Force password reset on next login
+                </label>
                 <div className="flex justify-end gap-2">
                   <Button variant="secondary" onClick={() => setEditing(false)}>
                     Cancel

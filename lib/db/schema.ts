@@ -36,6 +36,10 @@ export const activityActionEnum = pgEnum("activity_action", [
   "delete_user",
   "suspend_user",
   "favorite",
+  "account_lock",
+  "ip_rate_limit",
+  "session_revoked",
+  "password_change",
 ]);
 
 export const users = pgTable(
@@ -51,6 +55,14 @@ export const users = pgTable(
     usedBytes: bigint("used_bytes", { mode: "number" }).notNull().default(0),
     failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    suspendReason: text("suspend_reason"),
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    totpSecret: text("totp_secret"),
+    totpEnabled: boolean("totp_enabled").notNull().default(false),
+    totpRecoveryCodes: jsonb("totp_recovery_codes").$type<string[]>().default([]),
+    bandwidthQuotaBytes: bigint("bandwidth_quota_bytes", { mode: "number" }).notNull().default(0),
+    bandwidthUsedBytes: bigint("bandwidth_used_bytes", { mode: "number" }).notNull().default(0),
+    bandwidthPeriodStart: timestamp("bandwidth_period_start", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -71,6 +83,8 @@ export const sessions = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     ip: text("ip"),
     userAgent: text("user_agent"),
+    deviceLabel: text("device_label"),
+    lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
     impersonatingUserId: uuid("impersonating_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -79,6 +93,7 @@ export const sessions = pgTable(
   (table) => [
     index("sessions_user_id_idx").on(table.userId),
     index("sessions_expires_at_idx").on(table.expiresAt),
+    index("sessions_last_active_idx").on(table.lastActiveAt),
   ]
 );
 
@@ -123,6 +138,8 @@ export const files = pgTable(
     thumbnailKey: text("thumbnail_key"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     version: integer("version").notNull().default(1),
+    encrypted: boolean("encrypted").notNull().default(false),
+    encryptionMeta: jsonb("encryption_meta"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -213,6 +230,94 @@ export const changeHistory = pgTable(
   (table) => [
     index("change_history_file_id_idx").on(table.fileId),
     index("change_history_user_id_idx").on(table.userId),
+  ]
+);
+
+/** Single-row platform settings (Admin → Settings). */
+export const systemSettings = pgTable("system_settings", {
+  id: text("id").primaryKey().default("default"),
+  data: jsonb("data").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const folderMemberRoleEnum = pgEnum("folder_member_role", ["view", "edit"]);
+
+export const folderMembers = pgTable(
+  "folder_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    folderId: uuid("folder_id")
+      .notNull()
+      .references(() => folders.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: folderMemberRoleEnum("role").notNull().default("view"),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("folder_members_unique").on(table.folderId, table.userId),
+    index("folder_members_user_idx").on(table.userId),
+  ]
+);
+
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    keyHash: text("key_hash").notNull(),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default(["read"]),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("api_keys_user_idx").on(table.userId),
+    uniqueIndex("api_keys_prefix_unique").on(table.keyPrefix),
+  ]
+);
+
+export const webhooks = pgTable(
+  "webhooks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    secret: text("secret").notNull(),
+    events: jsonb("events").$type<string[]>().notNull().default(["upload", "delete", "share"]),
+    enabled: boolean("enabled").notNull().default(true),
+    lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
+    lastStatus: integer("last_status"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("webhooks_user_idx").on(table.userId)]
+);
+
+export const fileVersions = pgTable(
+  "file_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fileId: uuid("file_id")
+      .notNull()
+      .references(() => files.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    r2Key: text("r2_key").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull().default(0),
+    checksumSha256: text("checksum_sha256"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("file_versions_file_idx").on(table.fileId),
+    uniqueIndex("file_versions_unique").on(table.fileId, table.version),
   ]
 );
 

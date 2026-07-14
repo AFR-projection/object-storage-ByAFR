@@ -5,11 +5,12 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { files } from "@/lib/db/schema";
 import { requireAuth, getClientIp } from "@/lib/auth/session";
-import { canAccessUserResource } from "@/lib/auth/permissions";
+import { getAccessibleFile, getEffectiveUserId } from "@/lib/auth/permissions";
 import { objectExists } from "@/lib/storage/r2";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { validateCsrf } from "@/lib/security";
 import { enqueueJob } from "@/lib/queue";
+import { snapshotFileVersion } from "@/lib/files/versions";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 const editSchema = z.object({
@@ -39,11 +40,13 @@ export async function POST(request: NextRequest) {
 
     const sessionUser = await requireAuth();
     const body = editSchema.parse(await request.json());
+    void getClientIp(request);
 
-    const [file] = await db.select().from(files).where(eq(files.id, body.fileId)).limit(1);
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
+    const accessible = await getAccessibleFile(sessionUser, body.fileId);
+    if (!accessible?.canEdit) {
       return apiError("File not found", 404);
     }
+    const file = accessible.file;
 
     if (!file.mimeType.startsWith("image/")) {
       return apiError("Only images can be edited", 400);
@@ -52,6 +55,8 @@ export async function POST(request: NextRequest) {
     if (file.r2Key.startsWith("notes/") || !(await objectExists(file.r2Key))) {
       return apiError("File belum ada di storage. Upload ulang terlebih dahulu.", 404);
     }
+
+    await snapshotFileVersion(file, getEffectiveUserId(sessionUser));
 
     const client = getR2Client();
     const bucket = process.env.R2_BUCKET_NAME!;
@@ -92,7 +97,7 @@ export async function POST(request: NextRequest) {
 
     await db
       .update(files)
-      .set({ sizeBytes: output.length, updatedAt: new Date(), version: file.version + 1 })
+      .set({ sizeBytes: output.length, updatedAt: new Date() })
       .where(eq(files.id, body.fileId));
 
     await enqueueJob("generate_thumbnail", {
@@ -120,10 +125,11 @@ export async function PUT(request: NextRequest) {
     const sessionUser = await requireAuth();
     const body = trimSchema.parse(await request.json());
 
-    const [file] = await db.select().from(files).where(eq(files.id, body.fileId)).limit(1);
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
+    const accessible = await getAccessibleFile(sessionUser, body.fileId);
+    if (!accessible?.canEdit) {
       return apiError("File not found", 404);
     }
+    const file = accessible.file;
 
     await enqueueJob("trim_media", {
       fileId: body.fileId,

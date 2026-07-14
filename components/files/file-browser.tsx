@@ -5,7 +5,7 @@ import { useDropzone } from "react-dropzone";
 import {
   Upload, FolderPlus, FilePlus, Grid3X3, List, Search, Loader2, Trash2, AlertCircle, FolderUp,
   Image, Film, Music, FileText, FileArchive, Star, X, CheckSquare, Square,
-  Download, File,
+  Download, File, Lock, Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,10 @@ import { motion, AnimatePresence } from "framer-motion";
 const NoteEditor = dynamic(() => import("@/components/editors/note-editor").then((m) => m.NoteEditor), { ssr: false });
 const FilePreview = dynamic(() => import("@/components/files/file-preview").then((m) => m.FilePreview), { ssr: false });
 const UploadPanel = dynamic(() => import("@/components/files/upload-panel").then((m) => m.UploadPanel), { ssr: false });
+const FolderInviteDialog = dynamic(
+  () => import("@/components/folders/folder-invite-dialog").then((m) => m.FolderInviteDialog),
+  { ssr: false }
+);
 
 // ─── Filter definitions ─────────────────────────────────────────────────────
 const FILTERS = [
@@ -83,6 +87,9 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<UploadQueue | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const [encryptUploads, setEncryptUploads] = useState(false);
+  const [encryptPassphrase, setEncryptPassphrase] = useState("");
+  const [inviteFolder, setInviteFolder] = useState<FolderRecord | null>(null);
 
   // Infinite scroll
   const [allFiles, setAllFiles] = useState<FileRecord[]>([]);
@@ -93,6 +100,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   const getQueue = useCallback((): UploadQueue => {
     if (!uploadQueue) {
       const q = new UploadQueue();
+      q.setEncryption(encryptUploads, encryptUploads ? encryptPassphrase : null);
       q.on("change", (items, stats) => {
         if (stats.total > 0) setShowUploadPanel(true);
       });
@@ -104,8 +112,9 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
       setUploadQueue(q);
       return q;
     }
+    uploadQueue.setEncryption(encryptUploads, encryptUploads ? encryptPassphrase : null);
     return uploadQueue;
-  }, [uploadQueue, queryClient]);
+  }, [uploadQueue, queryClient, encryptUploads, encryptPassphrase]);
 
   const showError = useCallback((msg: string) => {
     setError(msg);
@@ -638,6 +647,27 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
             <FolderUp className="h-4 w-4 sm:mr-1.5" />
             <span className="hidden sm:inline">Upload Folder</span>
           </Button>
+          <Button
+            variant={encryptUploads ? "default" : "secondary"}
+            size="sm"
+            disabled={trash || favorites}
+            className="h-9 px-2 sm:px-3"
+            title="Encrypt uploads client-side (AES-GCM)"
+            onClick={() => {
+              if (encryptUploads) {
+                setEncryptUploads(false);
+                setEncryptPassphrase("");
+                return;
+              }
+              const pass = prompt("Encryption passphrase for uploads:");
+              if (!pass) return;
+              setEncryptPassphrase(pass);
+              setEncryptUploads(true);
+            }}
+          >
+            <Lock className="h-4 w-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">{encryptUploads ? "Encrypt On" : "Encrypt"}</span>
+          </Button>
           <input
             ref={folderInputRef}
             type="file"
@@ -796,6 +826,13 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
               ) : (
                 <div className="flex sm:absolute sm:top-1 sm:right-1 sm:hidden sm:group-hover:flex items-center gap-1">
                   <button
+                    className="flex h-9 w-9 sm:h-6 sm:w-6 items-center justify-center rounded bg-surface-hover hover:bg-accent/20 text-muted-foreground hover:text-accent transition-colors"
+                    onClick={(e) => { e.preventDefault(); setInviteFolder(folder); }}
+                    title="Share folder"
+                  >
+                    <Users className="h-4 w-4 sm:h-3 sm:w-3" />
+                  </button>
+                  <button
                     className="flex h-9 w-9 sm:h-6 sm:w-6 items-center justify-center rounded bg-surface-hover hover:bg-danger/20 text-muted-foreground hover:text-danger transition-colors"
                     onClick={(e) => { e.preventDefault(); folderAction("delete", folder); }}
                     title="Move to trash"
@@ -841,6 +878,14 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
 
       {showNoteEditor && selectedFile && (
         <NoteEditor file={selectedFile} onClose={() => { setShowNoteEditor(false); setSelectedFile(null); }} />
+      )}
+
+      {inviteFolder && (
+        <FolderInviteDialog
+          folderId={inviteFolder.id}
+          folderName={inviteFolder.name}
+          onClose={() => setInviteFolder(null)}
+        />
       )}
     </div>
 

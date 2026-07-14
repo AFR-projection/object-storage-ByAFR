@@ -1,10 +1,8 @@
 import { NextRequest } from "next/server";
-import { eq, and, isNull } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { files } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth/session";
-import { canAccessUserResource } from "@/lib/auth/permissions";
+import { getAccessibleFile } from "@/lib/auth/permissions";
 import { downloadFromR2Stream, objectExists, getPresignedDownloadUrl } from "@/lib/storage/r2";
+import { recordBandwidth, BandwidthQuotaError } from "@/lib/billing/bandwidth";
 import { apiSuccess, apiError } from "@/lib/api/response";
 
 export async function GET(
@@ -16,15 +14,11 @@ export async function GET(
     const { id } = await params;
     const format = request.nextUrl.searchParams.get("format");
 
-    const [file] = await db
-      .select()
-      .from(files)
-      .where(and(eq(files.id, id), isNull(files.deletedAt)))
-      .limit(1);
-
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
+    const accessible = await getAccessibleFile(sessionUser, id);
+    if (!accessible?.canView) {
       return apiError("File not found", 404);
     }
+    const file = accessible.file;
 
     if (file.isNote || file.r2Key.startsWith("notes/")) {
       return apiError("Preview not available for notes", 400);
@@ -35,25 +29,38 @@ export async function GET(
       return apiError("File belum ada di storage. Coba upload ulang.", 404);
     }
 
-    // Mode JSON: untuk getPreviewUrl() di client (image/pdf/text preview)
     if (format === "json") {
+      try {
+        await recordBandwidth(file.userId, file.sizeBytes);
+      } catch (err) {
+        if (err instanceof BandwidthQuotaError) {
+          return apiError("BANDWIDTH_QUOTA_EXCEEDED", 429);
+        }
+        throw err;
+      }
       const url = await getPresignedDownloadUrl(file.r2Key);
       return apiSuccess({ url });
     }
 
-    // Mode stream: download file dari R2 dan stream langsung ke browser
+    try {
+      await recordBandwidth(file.userId, file.sizeBytes);
+    } catch (err) {
+      if (err instanceof BandwidthQuotaError) {
+        return apiError("BANDWIDTH_QUOTA_EXCEEDED", 429);
+      }
+      throw err;
+    }
+
     const r2 = await downloadFromR2Stream(file.r2Key);
 
     if (!r2.body) {
       return apiError("File kosong", 404);
     }
 
-    // Convert Node.js Readable to Web ReadableStream if needed
     let stream: ReadableStream;
     if (r2.body instanceof ReadableStream) {
       stream = r2.body;
     } else if ("pipe" in r2.body && typeof r2.body.pipe === "function") {
-      // Node.js Readable stream — convert to Web ReadableStream
       stream = new ReadableStream({
         start(controller) {
           const nodeStream = r2.body as NodeJS.ReadableStream & { on: Function; pipe: Function };
@@ -63,7 +70,6 @@ export async function GET(
         },
       });
     } else {
-      // Fallback: try to use as ReadableStream directly
       stream = r2.body as unknown as ReadableStream;
     }
 

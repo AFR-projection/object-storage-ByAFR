@@ -2,21 +2,26 @@ import { NextRequest } from "next/server";
 import { eq, and, isNull, isNotNull, desc, lt } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { files, folders } from "@/lib/db/schema";
-import { requireAuth } from "@/lib/auth/session";
-import { getEffectiveUserId, canAccessUserResource } from "@/lib/auth/permissions";
+import { files } from "@/lib/db/schema";
+import { getClientIp, requireAuth } from "@/lib/auth/session";
+import { requireAuthOrApiKey } from "@/lib/auth/api-key";
+import {
+  getEffectiveUserId,
+  canAccessUserResource,
+  resolveFolderAccess,
+  getAccessibleFile,
+} from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
-import { getClientIp } from "@/lib/auth/session";
 import {
   buildR2Key,
   copyR2Object,
   deleteR2Object,
-  getPresignedDownloadUrl,
 } from "@/lib/storage/r2";
 import { validateCsrf } from "@/lib/security";
-import { cacheGet, cacheSet, cacheDelPattern, cacheDel } from "@/lib/cache/redis";
+import { cacheGet, cacheSet, cacheDelPattern } from "@/lib/cache/redis";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { recalculateUsedBytes } from "@/lib/db";
+import { dispatchWebhookEvent } from "@/lib/webhooks/dispatch";
 
 const listSchema = z.object({
   folderId: z.string().uuid().nullable().optional(),
@@ -28,9 +33,35 @@ const listSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(request, ["read"]);
     const userId = getEffectiveUserId(sessionUser);
     const params = listSchema.parse(Object.fromEntries(request.nextUrl.searchParams));
+
+    // Shared folder: list owner's files in that folder when member has access
+    if (params.folderId && !params.trash && !params.favorites) {
+      const access = await resolveFolderAccess(sessionUser, params.folderId);
+      if (!access?.canView) return apiError("Folder not found", 404);
+
+      const conditions = [
+        eq(files.folderId, params.folderId),
+        isNull(files.deletedAt),
+      ];
+      if (params.cursor) {
+        conditions.push(lt(files.createdAt, new Date(params.cursor)));
+      }
+
+      const result = await db
+        .select()
+        .from(files)
+        .where(and(...conditions))
+        .orderBy(desc(files.createdAt))
+        .limit(params.limit + 1);
+
+      const hasMore = result.length > params.limit;
+      const items = hasMore ? result.slice(0, params.limit) : result;
+      const nextCursor = hasMore ? items[items.length - 1].createdAt.toISOString() : null;
+      return apiSuccess({ files: items, nextCursor });
+    }
 
     const cacheKey = `files:${userId}:${JSON.stringify(params)}`;
     const cached = await cacheGet<{ files: unknown[]; nextCursor: string | null }>(cacheKey);
@@ -232,14 +263,21 @@ export async function DELETE(request: NextRequest) {
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
 
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(request, ["delete"]);
     const body = deleteSchema.parse(await request.json());
     const ip = getClientIp(request);
 
-    const [file] = await db.select().from(files).where(eq(files.id, body.id)).limit(1);
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
-      return apiError("File not found", 404);
+    const [row] = await db.select().from(files).where(eq(files.id, body.id)).limit(1);
+    if (!row) return apiError("File not found", 404);
+
+    const ownedOrMaster = canAccessUserResource(sessionUser, row.userId);
+    if (!ownedOrMaster) {
+      if (row.deletedAt) return apiError("File not found", 404);
+      const access = await getAccessibleFile(sessionUser, body.id);
+      if (!access?.canEdit) return apiError("File not found", 404);
     }
+
+    const file = row;
 
     cacheDelPattern(`search:${file.userId}:*`).catch(() => {});
     cacheDelPattern(`files:${file.userId}:*`).catch(() => {});
@@ -262,6 +300,12 @@ export async function DELETE(request: NextRequest) {
       resourceId: body.id,
       metadata: { permanent: body.permanent },
       ip,
+    });
+
+    void dispatchWebhookEvent(file.userId, "delete", {
+      fileId: body.id,
+      name: file.name,
+      permanent: body.permanent,
     });
 
     return apiSuccess({ deleted: true });

@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { LayoutDashboard, Users, BarChart3, ScrollText, Sliders } from "lucide-react";
+import { LayoutDashboard, Users, BarChart3, ScrollText, Sliders, Share2 } from "lucide-react";
 
 const tabs = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/shares", label: "Shares", icon: Share2 },
   { href: "/admin/monitoring", label: "Monitoring", icon: BarChart3 },
   { href: "/admin/logs", label: "Logs", icon: ScrollText },
   { href: "/admin/settings", label: "Settings", icon: Sliders },

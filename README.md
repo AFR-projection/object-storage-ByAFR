@@ -20,9 +20,11 @@ Built with **Next.js 16**, **Drizzle ORM**, **Cloudflare R2**, and **Redis**.
 - **Recycle Bin** — Soft-delete with time grouping (Today / Yesterday / This Week / This Month / Older), batch restore and permanent delete
 - **Favorites** — Bookmark files for quick access
 - **Search** — Full-text search across all files
-- **Admin Panel** — User management, impersonation, real-time monitoring, activity logs
-- **Security** — Argon2id password hashing, CSRF protection, rate limiting, magic byte validation, CSP headers, bot detection
-- **Background Jobs** — Thumbnail generation, image compression, media processing via BullMQ
+- **Admin Panel** — User management, impersonation, Shares Center, storage analytics (30d growth + MIME charts), real-time monitoring, activity logs
+- **Enterprise security** — TOTP 2FA + recovery codes, forced password reset (`mustChangePassword`), stronger password policy (min 10, 3 character classes), account suspension with reason, session management
+- **Platform APIs** — API keys, webhooks, folder collaboration, file versions, bandwidth quotas, client-side encryption hooks
+- **Realtime feedback** — SSE live events, connection status, system toasts, page progress
+- **Background Jobs** — Thumbnail generation, image compression, media processing, webhook delivery via BullMQ
 - **Dark / Light Mode** — Custom theming with localStorage persistence
 - **Responsive Design** — Desktop-first with premium UI (Framer Motion, gradients, glow effects)
 
@@ -177,47 +179,54 @@ This starts 4 services:
 
 ## 🖥️ VPS Deployment
 
-### Option 1: Docker Compose (Recommended)
+### Option 1: One-command Docker deploy (Recommended)
 
-**Requirements:** Ubuntu 22.04+, Docker, Docker Compose.
+**Requirements:** Ubuntu 22.04+, Docker, Docker Compose plugin. External services: **Neon Postgres** + **Cloudflare R2**.
 
 ```bash
-# 1. SSH into VPS
+# 1. SSH into VPS + install Docker
 ssh user@vps-ip
-
-# 2. Install Docker
 curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Logout & login again
+sudo usermod -aG docker $USER   # then re-login
 
-# 3. Clone project
+# 2. Clone repo → configure env → deploy
 git clone <repo-url> /opt/storage-by-afr
 cd /opt/storage-by-afr
+cp .env.example .env && nano .env
+# Required: DATABASE_URL, R2_*, SESSION_SECRET, MASTER_PASSWORD, NEXT_PUBLIC_APP_URL
 
-# 4. Create .env file
-nano .env
-# Fill all environment variables (see table above)
-# MAKE SURE: NEXT_PUBLIC_APP_URL=https://your-domain.com
-
-# 5. Build & run
-cd docker
-docker compose up -d --build
+chmod +x scripts/vps-deploy.sh
+./scripts/vps-deploy.sh
+# or: npm run deploy:vps
 ```
 
-### Option 2: Manual (without Docker)
+What the script does:
+1. Validates `.env` (rejects empty/placeholder values)
+2. `docker compose -f docker/docker-compose.yml up -d --build`
+3. Runs the `setup` profile (`db:push` + master bootstrap)
 
-**Requirements:** Node.js 20+, PM2, Nginx, Redis.
+Useful follow-ups:
+```bash
+npm run deploy:logs    # live logs
+npm run deploy:down    # stop stack
+```
+
+### Option 2: Manual compose / PM2
 
 ```bash
-# 1. Install dependencies
+cd /opt/storage-by-afr
+cp .env.example .env && nano .env
+docker compose -f docker/docker-compose.yml up -d --build
+docker compose -f docker/docker-compose.yml --profile setup run --rm setup
+```
+
+**PM2 (without Docker)** — Node.js 20+, Redis, Nginx:
+
+```bash
 cd /opt/storage-by-afr
 npm install --production
 npm install sharp  # native module
-
-# 2. Build
 npm run build
-
-# 3. Setup PM2 ecosystem (create ecosystem.config.js)
 ```
 
 ```js

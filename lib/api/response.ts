@@ -6,8 +6,15 @@ export function apiSuccess<T>(data: T, status = 200) {
   return NextResponse.json({ success: true, data }, { status, headers: SECURITY_HEADERS });
 }
 
-export function apiError(message: string, status = 400) {
-  return NextResponse.json({ success: false, error: message }, { status, headers: SECURITY_HEADERS });
+export function apiError(
+  message: string,
+  status = 400,
+  extra?: { code?: string; [key: string]: unknown }
+) {
+  return NextResponse.json(
+    { success: false, error: message, ...(extra ?? {}) },
+    { status, headers: SECURITY_HEADERS }
+  );
 }
 
 export function handleApiError(error: unknown) {

@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Suspense, useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,12 +31,20 @@ const actionConfig: Record<string, { icon: typeof Upload; color: string; bg: str
   delete_user: { icon: UserMinus, color: "text-red-500", bg: "bg-red-500/10", label: "Delete User", description: "User deleted" },
   suspend_user: { icon: UserMinus, color: "text-orange-500", bg: "bg-orange-500/10", label: "Suspend User", description: "User suspended" },
   favorite: { icon: Star, color: "text-yellow-400", bg: "bg-yellow-400/10", label: "Favorite", description: "File favorited" },
+  account_lock: { icon: Shield, color: "text-red-500", bg: "bg-red-500/10", label: "Account Lock", description: "Account locked after failed logins" },
+  ip_rate_limit: { icon: Globe, color: "text-orange-500", bg: "bg-orange-500/10", label: "IP Rate Limit", description: "IP hit login rate limit" },
+  session_revoked: { icon: LogOut, color: "text-rose-500", bg: "bg-rose-500/10", label: "Session Revoked", description: "Session was revoked" },
+  password_change: { icon: Shield, color: "text-indigo-500", bg: "bg-indigo-500/10", label: "Password Change", description: "Password was changed" },
 };
 
 const filterActions = [
   { value: "", label: "All Actions", icon: Activity },
   { value: "login", label: "Login", icon: LogIn },
   { value: "logout", label: "Logout", icon: LogOut },
+  { value: "account_lock", label: "Account Lock", icon: Shield },
+  { value: "ip_rate_limit", label: "IP Rate Limit", icon: Globe },
+  { value: "session_revoked", label: "Session Revoked", icon: LogOut },
+  { value: "password_change", label: "Password Change", icon: Shield },
   { value: "upload", label: "Upload", icon: Upload },
   { value: "download", label: "Download", icon: Download },
   { value: "delete", label: "Delete", icon: Trash2 },
@@ -243,11 +253,35 @@ function formatBytes(bytes: number): string {
 }
 
 export default function AdminLogsPage() {
-  const [action, setAction] = useState("");
-  const [search, setSearch] = useState("");
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-2">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="h-16 skeleton rounded-xl" />
+          ))}
+        </div>
+      }
+    >
+      <AdminLogsContent />
+    </Suspense>
+  );
+}
+
+function AdminLogsContent() {
+  const searchParams = useSearchParams();
+  const [action, setAction] = useState(searchParams.get("action") ?? "");
+  const [search, setSearch] = useState(searchParams.get("user") ?? searchParams.get("search") ?? "");
   const [exporting, setExporting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+
+  useEffect(() => {
+    const a = searchParams.get("action");
+    const u = searchParams.get("user") ?? searchParams.get("search");
+    if (a) setAction(a);
+    if (u) setSearch(u);
+  }, [searchParams]);
 
   const { data: logs, refetch, isLoading, isFetching } = useQuery({
     queryKey: ["admin-logs", action, search],
@@ -487,7 +521,13 @@ export default function AdminLogsPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground truncate">{log.username}</span>
+                          <Link
+                            href={`/admin/users/${log.userId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-sm font-medium text-foreground truncate hover:underline"
+                          >
+                            {log.username}
+                          </Link>
                           {log.userRole === "master" && (
                             <span className="rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-500">ADMIN</span>
                           )}
@@ -538,8 +578,25 @@ export default function AdminLogsPage() {
                             </div>
                             <div>
                               <span className="text-muted-foreground/60 uppercase tracking-wider font-semibold">User</span>
-                              <p className="mt-1 font-medium text-foreground">{log.username} ({log.email})</p>
-                              <p className="text-muted-foreground">ID: <span className="font-mono">{log.userId.slice(0, 8)}...</span></p>
+                              <p className="mt-1 font-medium text-foreground">
+                                <Link href={`/admin/users/${log.userId}`} className="hover:underline">
+                                  {log.username}
+                                </Link>{" "}
+                                ({log.email})
+                              </p>
+                              <p className="text-muted-foreground">
+                                ID:{" "}
+                                <Link href={`/admin/users/${log.userId}`} className="font-mono hover:underline">
+                                  {log.userId.slice(0, 8)}...
+                                </Link>
+                                {" · "}
+                                <Link
+                                  href={`/admin/logs?user=${encodeURIComponent(log.username)}`}
+                                  className="text-primary hover:underline"
+                                >
+                                  Filter logs
+                                </Link>
+                              </p>
                             </div>
                             <div>
                               <span className="text-muted-foreground/60 uppercase tracking-wider font-semibold">Network</span>

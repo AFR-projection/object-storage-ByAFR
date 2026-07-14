@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { files, fileContents, changeHistory } from "@/lib/db/schema";
+import { fileContents, changeHistory } from "@/lib/db/schema";
 import { requireAuth, getClientIp } from "@/lib/auth/session";
-import { canAccessUserResource } from "@/lib/auth/permissions";
+import { getAccessibleFile, getEffectiveUserId } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
@@ -17,13 +17,8 @@ export async function GET(
     const sessionUser = await requireAuth();
     const { id } = await params;
 
-    const [file] = await db
-      .select()
-      .from(files)
-      .where(and(eq(files.id, id), isNull(files.deletedAt)))
-      .limit(1);
-
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
+    const accessible = await getAccessibleFile(sessionUser, id);
+    if (!accessible?.canView) {
       return apiError("File not found", 404);
     }
 
@@ -33,7 +28,7 @@ export async function GET(
       .where(eq(fileContents.fileId, id))
       .limit(1);
 
-    return apiSuccess({ file, content: content ?? null });
+    return apiSuccess({ file: accessible.file, content: content ?? null });
   } catch (error) {
     return handleApiError(error);
   }
@@ -56,15 +51,11 @@ export async function PUT(
     const body = updateSchema.parse(await request.json());
     const ip = getClientIp(request);
 
-    const [file] = await db
-      .select()
-      .from(files)
-      .where(and(eq(files.id, id), isNull(files.deletedAt)))
-      .limit(1);
-
-    if (!file || !canAccessUserResource(sessionUser, file.userId)) {
+    const accessible = await getAccessibleFile(sessionUser, id);
+    if (!accessible?.canEdit) {
       return apiError("File not found", 404);
     }
+    const file = accessible.file;
 
     const [existing] = await db
       .select()
@@ -89,6 +80,7 @@ export async function PUT(
       });
     }
 
+    const { files } = await import("@/lib/db/schema");
     await db
       .update(files)
       .set({ version: file.version + 1, updatedAt: new Date() })
@@ -96,7 +88,7 @@ export async function PUT(
 
     await db.insert(changeHistory).values({
       fileId: id,
-      userId: sessionUser.effectiveUserId,
+      userId: getEffectiveUserId(sessionUser),
       changeType: "edit",
       snapshot: body.content ?? body.annotations ?? {},
     });

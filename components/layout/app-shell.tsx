@@ -8,6 +8,10 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
+  if (user.mustChangePassword) {
+    redirect("/change-password");
+  }
+
   return (
     <ClientShell
       user={{

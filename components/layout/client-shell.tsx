@@ -7,6 +7,7 @@ import { Menu, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useRealtimeEvents } from "@/hooks/use-realtime-events";
 
 const STORAGE_KEY = "sidebar_collapsed";
 
@@ -55,6 +56,8 @@ export function ClientShell({
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarTransition, setSidebarTransition] = useState(false);
   const initialCollapsed = useRef(true);
+
+  useRealtimeEvents(true);
 
   const collapsed = useSyncExternalStore(
     subscribeCollapsed,

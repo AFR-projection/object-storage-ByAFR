@@ -110,7 +110,23 @@ export async function PATCH(
     const updates: Partial<typeof existing> = { updatedAt: new Date() };
     if (body.username) updates.username = body.username;
     if (body.email !== undefined) updates.email = body.email;
-    if (body.status) updates.status = body.status;
+    if (body.status) {
+      updates.status = body.status;
+      if (body.status === "active") {
+        updates.suspendReason = null;
+      } else if (body.status === "suspended" && body.suspendReason !== undefined) {
+        updates.suspendReason = body.suspendReason;
+      }
+    }
+    if (body.suspendReason !== undefined && !body.status) {
+      updates.suspendReason = body.suspendReason;
+    }
+    if (body.mustChangePassword !== undefined) {
+      updates.mustChangePassword = body.mustChangePassword;
+    }
+    if (body.bandwidthQuotaBytes !== undefined) {
+      updates.bandwidthQuotaBytes = body.bandwidthQuotaBytes;
+    }
     if (body.quotaBytes) updates.quotaBytes = body.quotaBytes;
     if (body.role) updates.role = body.role;
     if (body.password) {
@@ -125,9 +141,19 @@ export async function PATCH(
     await db.update(users).set(updates).where(eq(users.id, id));
     await cacheDelPattern("user:*");
 
-    await logActivity(master, "update_user", {
+    const action =
+      body.status === "suspended" && existing.status !== "suspended"
+        ? ("suspend_user" as const)
+        : ("update_user" as const);
+
+    await logActivity(master, action, {
       resourceType: "user",
       resourceId: id,
+      metadata: {
+        username: existing.username,
+        status: body.status,
+        suspendReason: body.suspendReason,
+      },
       ip,
     });
 

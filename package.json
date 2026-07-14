@@ -13,7 +13,12 @@
     "db:studio": "drizzle-kit studio",
     "bootstrap": "tsx scripts/bootstrap-master.ts",
     "reset-master-password": "tsx scripts/reset-master-password.ts",
-    "worker": "tsx workers/index.ts"
+    "worker": "tsx workers/index.ts",
+    "deploy:up": "docker compose -f docker/docker-compose.yml up -d --build",
+    "deploy:down": "docker compose -f docker/docker-compose.yml down",
+    "deploy:logs": "docker compose -f docker/docker-compose.yml logs -f",
+    "deploy:setup": "docker compose -f docker/docker-compose.yml --profile setup run --rm setup",
+    "deploy:vps": "bash scripts/vps-deploy.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1081.0",
@@ -54,6 +59,7 @@
     "lucide-react": "^1.23.0",
     "nanoid": "^5.1.16",
     "next": "16.2.10",
+    "otpauth": "^9.5.1",
     "pdfjs-dist": "^6.1.200",
     "postgres": "^3.4.9",
     "react": "19.2.4",

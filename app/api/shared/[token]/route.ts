@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { shares, files, activityLogs } from "@/lib/db/schema";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { getClientIpFromRequest, parseUserAgent, getIpLocation } from "@/lib/access-tracking";
+import { publishToUser } from "@/lib/realtime/events";
 
 export async function GET(
   request: NextRequest,
@@ -68,6 +69,14 @@ export async function GET(
         },
         ip,
       }).catch(() => {});
+    });
+
+    void publishToUser(share.sharedBy, {
+      type: "share_access",
+      shareId: share.id,
+      fileName: file.name,
+      accessCount: updatedShare.accessCount,
+      token,
     });
 
     return apiSuccess({

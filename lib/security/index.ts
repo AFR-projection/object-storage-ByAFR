@@ -35,6 +35,13 @@ export function resetIpRateLimit(ip: string): void {
 import type { NextRequest } from "next/server";
 
 export async function validateCsrf(request: NextRequest): Promise<boolean> {
+  // Skip CSRF for Bearer API keys (sk_*) — they are not browser cookie sessions.
+  const auth = request.headers.get("authorization");
+  if (auth?.startsWith("Bearer ")) {
+    const token = auth.slice(7).trim();
+    if (token.startsWith("sk_")) return true;
+  }
+
   const headerToken = request.headers.get("x-csrf-token");
   const cookieToken = request.cookies.get("csrf_token")?.value;
 

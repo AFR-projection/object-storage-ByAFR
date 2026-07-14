@@ -102,6 +102,76 @@ export async function GET(request: NextRequest) {
       .groupBy(activityLogs.action)
       .orderBy(desc(count()));
 
+    // Storage growth (30 days) — daily upload volume from activity logs
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const growthRaw = await db
+      .select({
+        day: sql<string>`to_char(${activityLogs.createdAt}, 'YYYY-MM-DD')`,
+        uploads: count(),
+        bytes: sql<number>`coalesce(sum((${activityLogs.metadata}->>'size')::bigint), 0)`,
+      })
+      .from(activityLogs)
+      .where(and(eq(activityLogs.action, "upload"), gte(activityLogs.createdAt, thirtyDaysAgo)))
+      .groupBy(sql`to_char(${activityLogs.createdAt}, 'YYYY-MM-DD')`)
+      .orderBy(sql`to_char(${activityLogs.createdAt}, 'YYYY-MM-DD')`);
+
+    // Fill missing days with zeros
+    const growthMap = new Map(growthRaw.map((r) => [r.day, { uploads: Number(r.uploads), bytes: Number(r.bytes) }]));
+    const storageGrowth: Array<{ day: string; uploads: number; bytes: number }> = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      storageGrowth.push({ day: key, ...(growthMap.get(key) ?? { uploads: 0, bytes: 0 }) });
+    }
+
+    // Storage by MIME (top categories)
+    const byMimeRaw = await db
+      .select({
+        mimeType: files.mimeType,
+        count: count(),
+        bytes: sum(files.sizeBytes),
+      })
+      .from(files)
+      .where(isNull(files.deletedAt))
+      .groupBy(files.mimeType)
+      .orderBy(desc(sum(files.sizeBytes)))
+      .limit(15);
+
+    const byMime = byMimeRaw.map((r) => {
+      const mime = r.mimeType || "unknown";
+      const category = mime.startsWith("image/")
+        ? "Images"
+        : mime.startsWith("video/")
+          ? "Videos"
+          : mime.startsWith("audio/")
+            ? "Audio"
+            : mime.includes("pdf") || mime.includes("document") || mime.includes("text")
+              ? "Documents"
+              : mime.includes("zip") || mime.includes("archive") || mime.includes("compressed")
+                ? "Archives"
+                : "Other";
+      return {
+        mimeType: mime,
+        category,
+        count: Number(r.count),
+        bytes: Number(r.bytes ?? 0),
+      };
+    });
+
+    // Aggregate by category for charts
+    const byCategoryMap = new Map<string, { count: number; bytes: number }>();
+    for (const row of byMime) {
+      const prev = byCategoryMap.get(row.category) ?? { count: 0, bytes: 0 };
+      byCategoryMap.set(row.category, {
+        count: prev.count + row.count,
+        bytes: prev.bytes + row.bytes,
+      });
+    }
+    const byCategory = Array.from(byCategoryMap.entries()).map(([category, v]) => ({
+      category,
+      ...v,
+    }));
+
     return apiSuccess({
       users: {
         total: userCount.total,
@@ -127,6 +197,9 @@ export async function GET(request: NextRequest) {
       sessions: activeSessions.total,
       topUsers,
       recentActivity,
+      storageGrowth,
+      byMime,
+      byCategory,
     });
   } catch (error) {
     return handleApiError(error);
