@@ -8,13 +8,19 @@ source "$SCRIPT_DIR/common.sh"
 
 SKIP_WIZARD=0
 SKIP_SSL=0
+FORCE_WIZARD=0
+FIX_ENV=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-wizard) SKIP_WIZARD=1; shift ;;
     --skip-ssl) SKIP_SSL=1; shift ;;
+    --force-wizard) FORCE_WIZARD=1; SKIP_WIZARD=0; shift ;;
+    --fix-env) FIX_ENV=1; shift ;;
     --help|-h)
-      echo "Usage: ./install.sh [--skip-wizard] [--skip-ssl]"
+      echo "Usage: ./install.sh [--skip-wizard] [--skip-ssl] [--force-wizard] [--fix-env]"
+      echo "  --force-wizard  Buat ulang .env (wizard interaktif)"
+      echo "  --fix-env       Perbaiki .env rusak (multiline/quote) tanpa wizard"
       exit 0
       ;;
     *) die "Unknown option: $1" ;;
@@ -27,12 +33,23 @@ main() {
 
   ensure_docker
 
-  if [[ $SKIP_WIZARD -eq 0 && ! -f "$ENV_FILE" ]]; then
+  if [[ $FIX_ENV -eq 1 ]]; then
+    [[ -f "$ENV_FILE" ]] || die "No .env to fix"
+    normalize_env_file
+    load_env
+    bash "$SCRIPT_DIR/validate.sh"
+    exit $?
+  fi
+
+  if [[ $FORCE_WIZARD -eq 1 ]]; then
+    bash "$SCRIPT_DIR/wizard.sh"
+  elif [[ $SKIP_WIZARD -eq 0 && ! -f "$ENV_FILE" ]]; then
     bash "$SCRIPT_DIR/wizard.sh"
   elif [[ ! -f "$ENV_FILE" ]]; then
     die "No .env file. Run ./install.sh without --skip-wizard"
   else
     ok "Using existing .env"
+    normalize_env_file
   fi
 
   load_env

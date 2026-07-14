@@ -38,19 +38,87 @@ get_public_ip() {
 
 load_env() {
   if [[ ! -f "$ENV_FILE" ]]; then return 0; fi
-  DEPLOY_DOMAIN="$(grep -E '^DEPLOY_DOMAIN=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
-  CERTBOT_EMAIL="$(grep -E '^CERTBOT_EMAIL=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
-  DATABASE_URL="$(grep -E '^DATABASE_URL=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
-  R2_ACCOUNT_ID="$(grep -E '^R2_ACCOUNT_ID=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
-  R2_ACCESS_KEY_ID="$(grep -E '^R2_ACCESS_KEY_ID=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
-  R2_SECRET_ACCESS_KEY="$(grep -E '^R2_SECRET_ACCESS_KEY=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
-  R2_BUCKET_NAME="$(grep -E '^R2_BUCKET_NAME=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
-  NEXT_PUBLIC_APP_URL="$(grep -E '^NEXT_PUBLIC_APP_URL=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
-  SESSION_SECRET="$(grep -E '^SESSION_SECRET=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '"')"
+  DEPLOY_DOMAIN="$(env_get DEPLOY_DOMAIN)"
+  CERTBOT_EMAIL="$(env_get CERTBOT_EMAIL)"
+  DATABASE_URL="$(env_get DATABASE_URL)"
+  R2_ACCOUNT_ID="$(env_get R2_ACCOUNT_ID)"
+  R2_ACCESS_KEY_ID="$(env_get R2_ACCESS_KEY_ID)"
+  R2_SECRET_ACCESS_KEY="$(env_get R2_SECRET_ACCESS_KEY)"
+  R2_BUCKET_NAME="$(env_get R2_BUCKET_NAME)"
+  R2_PUBLIC_URL="$(env_get R2_PUBLIC_URL)"
+  NEXT_PUBLIC_APP_URL="$(env_get NEXT_PUBLIC_APP_URL)"
+  SESSION_SECRET="$(env_get SESSION_SECRET)"
+  MASTER_USERNAME="$(env_get MASTER_USERNAME)"
+  MASTER_PASSWORD="$(env_get MASTER_PASSWORD)"
   if [[ -f "$DEPLOY_STATE" ]]; then
     # shellcheck disable=SC1090
     source "$DEPLOY_STATE"
   fi
+}
+
+# Strip quotes, whitespace, and accidental line breaks from .env values
+sanitize_env_value() {
+  local v=$1
+  v="${v//$'\r'/}"
+  v="${v//$'\n'/}"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  if [[ "$v" == \"*\" && "$v" == *\" ]]; then
+    v="${v:1:${#v}-2}"
+  fi
+  printf '%s' "$v"
+}
+
+env_get() {
+  local key=$1
+  [[ -f "$ENV_FILE" ]] || return 0
+  local line val
+  line="$(grep -m1 "^${key}=" "$ENV_FILE" 2>/dev/null || true)"
+  [[ -z "$line" ]] && return 0
+  val="${line#*=}"
+  sanitize_env_value "$val"
+}
+
+env_set_line() {
+  local key=$1
+  local val=$2
+  val="$(sanitize_env_value "$val")"
+  printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE"
+}
+
+# Fix broken wizard output (multiline quoted values) → KEY=value per line
+normalize_env_file() {
+  [[ -f "$ENV_FILE" ]] || return 0
+  local tmp current_key="" val="" line=""
+  tmp="$(mktemp)"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^[[:space:]]*# || -z "${line//[[:space:]]/}" ]]; then
+      printf '%s\n' "$line" >> "$tmp"
+      continue
+    fi
+    if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+      if [[ -n "$current_key" ]]; then
+        val="$(sanitize_env_value "$val")"
+        printf '%s=%s\n' "$current_key" "$val" >> "$tmp"
+      fi
+      current_key="${line%%=*}"
+      val="${line#*=}"
+    elif [[ -n "$current_key" ]]; then
+      val+="${line}"
+    else
+      printf '%s\n' "$line" >> "$tmp"
+    fi
+  done < "$ENV_FILE"
+  if [[ -n "$current_key" ]]; then
+    val="$(sanitize_env_value "$val")"
+    printf '%s=%s\n' "$current_key" "$val" >> "$tmp"
+  fi
+  if cmp -s "$ENV_FILE" "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    return 0
+  fi
+  mv "$tmp" "$ENV_FILE"
+  ok "File .env dinormalisasi (format KEY=value)"
 }
 
 save_deploy_state() {

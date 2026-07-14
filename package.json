@@ -19,6 +19,7 @@
     "deploy:logs": "docker compose -f docker/docker-compose.yml logs -f",
     "deploy:setup": "docker compose -f docker/docker-compose.yml --profile setup run --rm setup",
     "deploy:vps": "bash install.sh",
+    "deploy:fix-env": "bash install.sh --fix-env",
     "deploy:health": "bash scripts/deploy/health.sh",
     "deploy:update": "bash update.sh",
     "deploy:install": "bash scripts/vps-install.sh"

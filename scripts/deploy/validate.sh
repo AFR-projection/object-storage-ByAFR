@@ -50,7 +50,12 @@ validate_database_url() {
       "apk add --no-cache postgresql-client >/dev/null 2>&1 && psql \"\$DATABASE_URL\" -c 'SELECT 1' >/dev/null 2>&1"; then
       check_mark 0 "Database connection OK"
     else
-      check_mark 1 "Database connection FAILED — periksa DATABASE_URL & Neon allowlist IP VPS"
+      local vps_ip
+      vps_ip="$(get_public_ip)"
+      check_mark 1 "Database connection FAILED"
+      echo "      → Neon dashboard → Project Settings → IP Allow → tambahkan: ${vps_ip}"
+      echo "      → Atau nonaktifkan IP restriction sementara"
+      echo "      → Pastikan DATABASE_URL 1 baris penuh (paste ulang jika terpotong)"
     fi
   else
     warn "Docker belum ada — skip live DB test"
@@ -59,9 +64,13 @@ validate_database_url() {
 
 validate_r2() {
   log "Checking R2 credentials..."
+  load_env
   local missing=0
   for v in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET_NAME; do
-    if [[ -z "${!v:-}" ]]; then missing=1; fail "$v kosong"; fi
+    if [[ -z "${!v:-}" ]]; then
+      missing=1
+      fail "$v kosong — jalankan: ./install.sh --fix-env atau --force-wizard"
+    fi
   done
   [[ $missing -eq 1 ]] && return
 
@@ -132,6 +141,7 @@ run_validate() {
   log "Pre-flight validation"
   echo
   [[ -f "$ENV_FILE" ]] || die "File .env tidak ada. Jalankan wizard dulu."
+  normalize_env_file
   load_env
   validate_domain_format
   validate_app_url

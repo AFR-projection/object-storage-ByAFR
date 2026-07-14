@@ -186,9 +186,31 @@ Otomatis: backup → git pull → validate → rebuild → migration → health 
 
 ### Database connection failed
 
-- Cek `DATABASE_URL` di Neon dashboard
-- Allowlist IP VPS di Neon
+- Cek `DATABASE_URL` di Neon dashboard — **harus 1 baris penuh** (jangan terpotong)
+- Neon → Project Settings → **IP Allow** → tambahkan IP VPS (installer menampilkan IP saat gagal)
+- Atau nonaktifkan IP restriction sementara di Neon
 - Test: `npm run deploy:health`
+
+### `.env` rusak (ada `"` atau baris baru di tengah value)
+
+Bug wizard lama bisa menghasilkan:
+
+```env
+R2_SECRET_ACCESS_KEY="
+acf230cb..."
+```
+
+Perbaiki otomatis:
+
+```bash
+./install.sh --fix-env
+```
+
+Atau buat ulang dari wizard:
+
+```bash
+./install.sh --force-wizard
+```
 
 ### Upload gagal (CORS)
 
