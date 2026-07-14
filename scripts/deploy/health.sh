@@ -80,7 +80,8 @@ check_ssl() {
 }
 
 check_database_quick() {
-  if docker run --rm --env-file "$ENV_FILE" postgres:16-alpine sh -c \
+  init_docker 2>/dev/null || true
+  if docker_run --rm --env-file "$ENV_FILE" postgres:16-alpine sh -c \
     "apk add --no-cache postgresql-client >/dev/null 2>&1 && psql \"\$DATABASE_URL\" -c 'SELECT 1' >/dev/null 2>&1" 2>/dev/null; then
     status_line 0 "Database" "connected"
   else
@@ -89,6 +90,7 @@ check_database_quick() {
 }
 
 run_health() {
+  init_docker 2>/dev/null || true
   echo
   log "Health check"
   echo

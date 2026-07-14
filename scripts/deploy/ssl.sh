@@ -77,9 +77,10 @@ setup_ssl() {
 setup_renewal_hook() {
   local domain=$1
   local hook="/etc/letsencrypt/renewal-hooks/deploy/storage-by-afr.sh"
+  local compose_cmd="${COMPOSE[*]}"
   local hook_content="#!/bin/bash
 cd \"$ROOT\"
-docker compose -f docker/docker-compose.yml restart nginx || true
+${compose_cmd} restart nginx || true
 "
 
   if [[ $EUID -eq 0 ]]; then

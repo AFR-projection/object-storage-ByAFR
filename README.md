@@ -147,22 +147,16 @@ docker compose -f docker/docker-compose.dev.yml up -d
 
 ## Production Deployment (VPS)
 
-Deploy production **tidak** dijelaskan di file ini — semua ada di **[DEPLOY.md](DEPLOY.md)**.
+1. `cp .env.example .env` → isi manual (DATABASE_URL, R2, domain)
+2. `./install.sh`
+
+Detail lengkap → **[DEPLOY.md](DEPLOY.md)** (wizard opsional: `./install.sh --wizard`)
 
 | Script | Fungsi |
 |--------|--------|
-| `./install.sh` | Install pertama — wizard interaktif, SSL, deploy, health check |
-| `./deploy.sh` | Deploy ulang (pakai `.env` yang sudah ada) |
-| `./update.sh` | Update aman — backup, pull, rebuild, migrate |
-
-```bash
-git clone <repo-url> /opt/storage-by-afr && cd /opt/storage-by-afr
-chmod +x install.sh update.sh deploy.sh
-./install.sh
-```
-
-Wizard otomatis membuat `.env` — tidak perlu edit manual.  
-Untuk requirement server, firewall, SSL, R2 CORS, backup, update, dan troubleshooting production → **[DEPLOY.md](DEPLOY.md)**.
+| `./install.sh` | Deploy (pakai `.env` manual) |
+| `./deploy.sh` | Deploy ulang |
+| `./update.sh` | Update aman |
 
 ---
 

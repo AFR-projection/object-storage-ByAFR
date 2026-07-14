@@ -6,21 +6,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
 
-SKIP_WIZARD=0
+USE_WIZARD=0
 SKIP_SSL=0
-FORCE_WIZARD=0
 FIX_ENV=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --skip-wizard) SKIP_WIZARD=1; shift ;;
+    --wizard) USE_WIZARD=1; shift ;;
+    --skip-wizard) shift ;; # legacy, no-op
     --skip-ssl) SKIP_SSL=1; shift ;;
-    --force-wizard) FORCE_WIZARD=1; SKIP_WIZARD=0; shift ;;
+    --force-wizard) USE_WIZARD=1; shift ;; # legacy alias
     --fix-env) FIX_ENV=1; shift ;;
     --help|-h)
-      echo "Usage: ./install.sh [--skip-wizard] [--skip-ssl] [--force-wizard] [--fix-env]"
-      echo "  --force-wizard  Buat ulang .env (wizard interaktif)"
-      echo "  --fix-env       Perbaiki .env rusak (multiline/quote) tanpa wizard"
+      echo "Usage: ./install.sh [--wizard] [--skip-ssl] [--fix-env]"
+      echo ""
+      echo "  Default: pakai .env manual (cp .env.example .env → nano .env)"
+      echo "  --wizard   Wizard interaktif (opsional)"
+      echo "  --fix-env    Perbaiki .env rusak (multiline/quote)"
+      echo "  --skip-ssl   Skip SSL (testing saja)"
       exit 0
       ;;
     *) die "Unknown option: $1" ;;
@@ -41,14 +44,11 @@ main() {
     exit $?
   fi
 
-  if [[ $FORCE_WIZARD -eq 1 ]]; then
+  if [[ $USE_WIZARD -eq 1 ]]; then
     bash "$SCRIPT_DIR/wizard.sh"
-  elif [[ $SKIP_WIZARD -eq 0 && ! -f "$ENV_FILE" ]]; then
-    bash "$SCRIPT_DIR/wizard.sh"
-  elif [[ ! -f "$ENV_FILE" ]]; then
-    die "No .env file. Run ./install.sh without --skip-wizard"
   else
-    ok "Using existing .env"
+    require_env_file
+    ok "Using .env"
     normalize_env_file
   fi
 

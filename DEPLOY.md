@@ -10,15 +10,18 @@ Target: VPS Ubuntu fresh + domain → **`./install.sh`** → selesai dengan HTTP
 ## Ringkasan (30 detik)
 
 ```bash
-ssh root@IP-VPS
+ssh ubuntu@IP-VPS
 git clone <repo-url> /opt/storage-by-afr
 cd /opt/storage-by-afr
 chmod +x install.sh deploy.sh update.sh
+
+cp .env.example .env
+nano .env    # isi DATABASE_URL, R2, domain — paste 1 baris penuh!
+
 ./install.sh
 ```
 
-Wizard akan tanya: domain, email, Neon DB, R2, password admin.  
-Tidak perlu edit `.env` manual.
+**`.env` manual** — sama seperti dulu. Wizard opsional: `./install.sh --wizard`
 
 ---
 
@@ -67,7 +70,7 @@ Di panel cloud provider (Tencent, AWS, dll.) buka juga **Security Group** port 8
 
 ---
 
-## Langkah 3 — Clone & install
+## Langkah 3 — Buat `.env` & install
 
 ```bash
 ssh ubuntu@IP-VPS
@@ -78,26 +81,56 @@ git clone <repo-url> /opt/storage-by-afr
 cd /opt/storage-by-afr
 
 chmod +x install.sh deploy.sh update.sh
+
+cp .env.example .env
+nano .env
+```
+
+### Isi `.env` (contoh)
+
+```env
+NODE_ENV=production
+DEPLOY_DOMAIN=storage.dataku.id
+CERTBOT_EMAIL=admin@storage.dataku.id
+
+DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require
+
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=strogebyafr
+R2_PUBLIC_URL=https://pub-xxxx.r2.dev
+
+MASTER_USERNAME=ByAFR
+MASTER_PASSWORD=password-min-10-char
+SESSION_SECRET=random-64-char-hex
+
+NEXT_PUBLIC_APP_URL=https://storage.dataku.id
+COOKIE_SECURE=true
+HSTS_ENABLED=true
+REDIS_URL=redis://redis:6379
+REDIS_DISABLED=false
+```
+
+**Penting:** `DATABASE_URL` harus **1 baris penuh** dari Neon.  
+Jangan sampai terpotong jadi `...?sslmode>` — itu penyebab deploy gagal.
+
+Deploy:
+
+```bash
 ./install.sh
 ```
 
-### Wizard akan menanyakan:
-
-| Pertanyaan | Contoh |
-|------------|--------|
-| Domain | `storage.example.com` |
-| Email (Let's Encrypt) | `admin@example.com` |
-| DATABASE_URL | Paste dari Neon dashboard |
-| R2 credentials | Account ID, keys, bucket, public URL |
-| Admin username | `ByAFR` |
-| Admin password | Min 10 karakter |
-
 Script otomatis:
-- Install Docker (jika belum ada)
-- Validasi database & R2 **sebelum** build
-- Generate `.env`
+- Validasi `.env` (format)
 - Request SSL Let's Encrypt
-- Generate nginx config dari domain
+- Generate nginx config
+- Build & start Docker (app, worker, redis, nginx)
+- Database migrate + admin bootstrap
+
+### Wizard (opsional)
+
+Kalau mau wizard interaktif: `./install.sh --wizard`
 - Build & start containers
 - Database migration + bootstrap admin
 - Health check semua service
@@ -183,6 +216,17 @@ Otomatis: backup → git pull → validate → rebuild → migration → health 
 - DNS belum pointing ke VPS → perbaiki A record, tunggu propagate
 - Port 80 blocked → buka firewall & security group
 - Jalankan ulang: `sudo bash scripts/deploy/ssl.sh`
+
+### Docker permission denied
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+# atau langsung:
+sudo ./install.sh
+```
+
+Installer otomatis pakai `sudo docker` jika perlu.
 
 ### Database connection failed
 

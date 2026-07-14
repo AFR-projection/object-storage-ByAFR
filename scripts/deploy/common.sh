@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$ROOT/docker/docker-compose.yml"
+DOCKER=(docker)
 COMPOSE=(docker compose -f "$COMPOSE_FILE")
 ENV_FILE="$ROOT/.env"
 DEPLOY_STATE="$ROOT/.deploy/state.env"
@@ -129,19 +130,45 @@ CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
 EOF
 }
 
+init_docker() {
+  if docker info >/dev/null 2>&1; then
+    DOCKER=(docker)
+  elif sudo docker info >/dev/null 2>&1; then
+    DOCKER=(sudo docker)
+    warn "Docker pakai sudo — fix permanen: sudo usermod -aG docker \$USER && newgrp docker"
+  else
+    die "Docker tidak bisa diakses. Install: curl -fsSL https://get.docker.com | sh"
+  fi
+  COMPOSE=("${DOCKER[@]}" compose -f "$COMPOSE_FILE")
+}
+
+docker_run() {
+  "${DOCKER[@]}" run "$@"
+}
+
 ensure_docker() {
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    ok "Docker & Compose ready"
+  need_cmd docker
+  init_docker
+  if ! "${DOCKER[@]}" compose version >/dev/null 2>&1; then
+    die "Docker Compose tidak tersedia"
+  fi
+  ok "Docker & Compose ready"
+}
+
+require_env_file() {
+  if [[ -f "$ENV_FILE" ]]; then
     return 0
   fi
-  log "Installing Docker..."
-  if [[ $EUID -ne 0 ]]; then
-    die "Docker not found. Run: sudo bash $ROOT/scripts/vps-install.sh"
-  fi
-  curl -fsSL https://get.docker.com | sh
-  systemctl enable docker
-  systemctl start docker
-  ok "Docker installed"
+  echo
+  echo "File .env belum ada. Buat manual (disarankan):"
+  echo
+  echo "  cp .env.example .env"
+  echo "  nano .env          # isi DATABASE_URL, R2, domain, dll."
+  echo "  ./install.sh"
+  echo
+  echo "Wizard interaktif (opsional): ./install.sh --wizard"
+  echo
+  die "Buat .env dulu lalu jalankan ulang ./install.sh"
 }
 
 port_free() {
@@ -182,3 +209,17 @@ print_final_status() {
   echo -e "${BOLD}==========================================${NC}"
   echo
 }
+
+_auto_init_docker() {
+  command -v docker >/dev/null 2>&1 || return 0
+  if docker info >/dev/null 2>&1; then
+    DOCKER=(docker)
+  elif sudo docker info >/dev/null 2>&1; then
+    DOCKER=(sudo docker)
+  else
+    return 0
+  fi
+  COMPOSE=("${DOCKER[@]}" compose -f "$COMPOSE_FILE")
+}
+
+_auto_init_docker
