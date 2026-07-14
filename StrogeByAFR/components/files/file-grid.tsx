@@ -1,0 +1,762 @@
+"use client";
+
+import { useRef, useState, useEffect, useMemo, memo } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { motion } from "framer-motion";
+import {
+  FileText, Image, Film, Music, FileArchive, File,
+  Star, Trash2, Copy, RotateCcw, Pencil, MoreHorizontal, Download,
+  Play, Share2, Check,
+  ArrowUpDown, ArrowUp, ArrowDown,
+} from "lucide-react";
+import { cn, formatBytes, formatDate, getMimeCategory } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import type { File as FileRecord } from "@/lib/db/schema";
+
+const ROW_HEIGHT = 56;
+const OVERSCAN = 8;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
+  const cat = getMimeCategory(mimeType);
+  const icons: Record<string, typeof File> = {
+    image: Image, video: Film, audio: Music, pdf: FileText,
+    document: FileText, spreadsheet: FileText, presentation: FileText,
+    archive: FileArchive, text: FileText,
+  };
+  const Icon = icons[cat] ?? File;
+  return <Icon className={className} />;
+}
+
+function getAccentColor(mimeType: string): string {
+  const c: Record<string, string> = {
+    image: "text-violet-500", video: "text-blue-500", audio: "text-emerald-500",
+    pdf: "text-red-500", document: "text-sky-500", spreadsheet: "text-green-500",
+    presentation: "text-orange-500", archive: "text-amber-500", text: "text-gray-500",
+  };
+  return c[getMimeCategory(mimeType)] ?? "text-gray-400";
+}
+
+function getGradientFallback(mimeType: string): string {
+  const g: Record<string, string> = {
+    image: "from-violet-500/20 to-fuchsia-500/10",
+    video: "from-blue-500/20 to-cyan-500/10",
+    audio: "from-emerald-500/20 to-teal-500/10",
+    pdf: "from-red-500/20 to-orange-500/10",
+    document: "from-sky-500/20 to-indigo-500/10",
+    spreadsheet: "from-green-500/20 to-lime-500/10",
+    presentation: "from-orange-500/20 to-amber-500/10",
+    archive: "from-amber-500/20 to-yellow-500/10",
+    text: "from-gray-500/15 to-zinc-500/10",
+  };
+  return g[getMimeCategory(mimeType)] ?? "from-gray-500/10 to-zinc-500/5";
+}
+
+function getSortValue(file: FileRecord, sortBy: string): string | number {
+  switch (sortBy) {
+    case "name": return file.name.toLowerCase();
+    case "size": return Number(file.sizeBytes);
+    case "date": return new Date(file.updatedAt).getTime();
+    case "type": return file.mimeType;
+    default: return file.name.toLowerCase();
+  }
+}
+
+function getTypeLabel(mimeType: string): string {
+  const cat = getMimeCategory(mimeType);
+  const labels: Record<string, string> = {
+    image: "Image", video: "Video", audio: "Audio", pdf: "PDF",
+    document: "Document", spreadsheet: "Sheet", presentation: "Slides",
+    archive: "Archive", text: "Text",
+  };
+  return labels[cat] ?? "File";
+}
+
+// ─── Thumbnail lazy loader ──────────────────────────────────────────────────
+
+function useThumbnail(fileId: string, hasThumb: boolean) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasThumb) return;
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          const dpr = window.devicePixelRatio || 1;
+          let size = 300;
+          if (dpr >= 2) size = 600;
+          if (el.clientWidth > 400) size = 600;
+          if (el.clientWidth > 800) size = 1200;
+          setCurrentSrc(`/api/files/${fileId}/thumbnail?size=${size}`);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fileId, hasThumb]);
+
+  return { containerRef, currentSrc, loaded, setLoaded, error, setError };
+}
+
+// ─── Dropdown hook ──────────────────────────────────────────────────────────
+
+function useDropdown() {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openId) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpenId(null);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openId]);
+  return { openId, setOpenId, ref };
+}
+
+// ─── Sort header ────────────────────────────────────────────────────────────
+
+interface SortHeaderProps {
+  label: string;
+  sortKey: string;
+  current: string;
+  order: "asc" | "desc";
+  onSort: (key: string) => void;
+}
+
+function SortHeader({ label, sortKey, current, order, onSort }: SortHeaderProps) {
+  const active = current === sortKey;
+  return (
+    <button
+      onClick={() => onSort(sortKey)}
+      className={cn(
+        "flex items-center gap-1 text-xs font-semibold uppercase tracking-wider transition-colors",
+        active ? "text-foreground" : "text-muted-foreground/60 hover:text-foreground/80"
+      )}
+    >
+      {label}
+      <span className="inline-flex flex-col leading-none">
+        {active && order === "asc" ? (
+          <ArrowUp className="h-3 w-3" />
+        ) : active && order === "desc" ? (
+          <ArrowDown className="h-3 w-3" />
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-30" />
+        )}
+      </span>
+    </button>
+  );
+}
+
+// ─── Hover info card ────────────────────────────────────────────────────────
+
+function HoverInfoCard({ file, style }: { file: FileRecord; style?: React.CSSProperties }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 4, scale: 0.96 }}
+      style={style}
+      className="absolute z-40 left-1/2 -translate-x-1/2 top-full mt-2 w-72 rounded-2xl border border-border/60 bg-surface-elevated p-4 shadow-xl backdrop-blur-xl"
+    >
+      <div className="flex items-start gap-3 mb-3">
+        <div className={cn(
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br",
+          getGradientFallback(file.mimeType)
+        )}>
+          <FileIcon mimeType={file.mimeType} className={cn("h-5 w-5", getAccentColor(file.mimeType))} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold truncate">{file.name}</p>
+          <p className="text-xs text-muted-foreground/70">{getTypeLabel(file.mimeType)}</p>
+        </div>
+      </div>
+      <div className="space-y-1.5 text-xs text-muted-foreground/60">
+        <div className="flex justify-between">
+          <span>Size</span>
+          <span className="font-mono font-medium text-foreground/80">{formatBytes(file.sizeBytes)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Modified</span>
+          <span>{formatDate(file.updatedAt)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Type</span>
+          <span>{file.mimeType}</span>
+        </div>
+        {file.isFavorite && (
+          <div className="flex justify-between">
+            <span>Favorite</span>
+            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Main component ─────────────────────────────────────────────────────────
+
+export interface FileGridProps {
+  files: FileRecord[];
+  view: "grid" | "list";
+  trash?: boolean;
+  selectedIds: Set<string>;
+  sortBy: string;
+  sortOrder: "asc" | "desc";
+  onFileAction: (action: string, file: FileRecord) => void;
+  onFileClick: (file: FileRecord) => void;
+  onSelect: (id: string, shiftKey?: boolean) => void;
+  onSelectAll: () => void;
+  onSort: (key: string) => void;
+  hasMore?: boolean;
+  loadMore?: () => void;
+  loadingMore?: boolean;
+}
+
+export function FileGrid({
+  files, view, trash = false,
+  selectedIds, sortBy, sortOrder,
+  onFileAction, onFileClick, onSelect, onSelectAll, onSort,
+  hasMore, loadMore, loadingMore,
+}: FileGridProps) {
+  const allSelected = files.length > 0 && selectedIds.size === files.length;
+
+  // ── Sorted files ──
+  const sorted = useMemo(() => {
+    if (!files.length) return files;
+    return [...files].sort((a, b) => {
+      const va = getSortValue(a, sortBy);
+      const vb = getSortValue(b, sortBy);
+      if (typeof va === "string" && typeof vb === "string") {
+        return sortOrder === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      return sortOrder === "asc"
+        ? (va as number) - (vb as number)
+        : (vb as number) - (va as number);
+    });
+  }, [files, sortBy, sortOrder]);
+
+  // ── Virtual list ──
+  const listRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: sorted.length + (hasMore ? 1 : 0),
+    getScrollElement: () => listRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: OVERSCAN,
+  });
+
+  // Infinite scroll trigger
+  const lastItemRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore || !lastItemRef.current || !loadMore) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMore(); },
+      { rootMargin: "200px" }
+    );
+    observer.observe(lastItemRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, sorted.length]);
+
+  // ── Empty ──
+  if (files.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col items-center justify-center py-24 text-muted-foreground"
+      >
+        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-accent/5 border border-accent/10">
+          <File className="h-10 w-10 text-accent/40" />
+        </div>
+        <p className="text-lg font-semibold">No files here</p>
+        <p className="mt-1 text-sm text-muted-foreground/70">
+          {trash ? "Recycle bin is empty" : "Upload files or create a note to get started"}
+        </p>
+      </motion.div>
+    );
+  }
+
+  // ====== GRID VIEW ======
+  if (view === "grid") {
+    return (
+      <div>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          {sorted.map((file, i) => (
+            <GridCard
+              key={file.id}
+              file={file}
+              index={i}
+              selected={selectedIds.has(file.id)}
+              trash={trash}
+              onFileAction={onFileAction}
+              onFileClick={onFileClick}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+        {hasMore && loadMore && (
+          <div ref={lastItemRef} className="flex justify-center py-8">
+            {loadingMore ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground/60">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+                Loading more...
+              </div>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={loadMore}>
+                Load more
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ====== LIST VIEW ======
+  return (
+    <div
+      ref={listRef}
+      className="rounded-2xl border border-border/50 bg-surface overflow-auto"
+      style={{ maxHeight: "calc(100dvh - 16rem)" }}
+    >
+      {/* Table header */}
+      <div className="sticky top-0 z-10 grid grid-cols-[28px_1fr_60px] sm:grid-cols-[28px_2fr_100px_44px] md:grid-cols-[28px_2fr_1fr_1fr_44px] lg:grid-cols-[28px_2fr_1fr_1fr_1fr_44px] border-b border-border/40 bg-muted/80 backdrop-blur-sm px-2 sm:px-4 py-2.5 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">
+        <button onClick={onSelectAll} className="flex items-center justify-center">
+          <div className={cn(
+            "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+            allSelected ? "border-accent bg-accent text-white" : "border-border/50 hover:border-accent/50"
+          )}>
+            {allSelected && <Check className="h-3 w-3" />}
+          </div>
+        </button>
+        <SortHeader label="Name" sortKey="name" current={sortBy} order={sortOrder} onSort={onSort} />
+        <SortHeader label="Size" sortKey="size" current={sortBy} order={sortOrder} onSort={onSort} />
+        <span className="hidden sm:block">
+          <SortHeader label="Modified" sortKey="date" current={sortBy} order={sortOrder} onSort={onSort} />
+        </span>
+        <span className="hidden md:block">
+          <SortHeader label="Type" sortKey="type" current={sortBy} order={sortOrder} onSort={onSort} />
+        </span>
+        <span className="hidden lg:block" />
+      </div>
+
+      {/* Virtual list */}
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          position: "relative",
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          if (virtualItem.index >= sorted.length) {
+            return (
+              <div
+                key="loader"
+                ref={lastItemRef}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: `${virtualItem.size}px`,
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+                className="flex items-center justify-center text-xs text-muted-foreground/60"
+              >
+                {loadingMore ? (
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+                    Loading more...
+                  </div>
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={loadMore}>Load more</Button>
+                )}
+              </div>
+            );
+          }
+
+          const file = sorted[virtualItem.index];
+          const selected = selectedIds.has(file.id);
+          return (
+            <ListRow
+              key={file.id}
+              file={file}
+              selected={selected}
+              trash={trash}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: `${virtualItem.size}px`,
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+              onFileAction={onFileAction}
+              onFileClick={onFileClick}
+              onSelect={onSelect}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Grid Card ──────────────────────────────────────────────────────────────
+
+const GridCard = memo(function GridCard({
+  file, index, selected, trash, onFileAction, onFileClick, onSelect,
+}: {
+  file: FileRecord; index: number; selected: boolean;
+  trash?: boolean; onFileAction: (a: string, f: FileRecord) => void;
+  onFileClick: (f: FileRecord) => void; onSelect: (id: string) => void;
+}) {
+  const [hoverInfo, setHoverInfo] = useState(false);
+  const cat = getMimeCategory(file.mimeType);
+  const isVideo = cat === "video";
+  const isAudio = cat === "audio";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ delay: Math.min(index * 0.025, 0.3), duration: 0.2 }}
+      whileHover={{ y: -4 }}
+      className={cn(
+        "group relative rounded-2xl border bg-surface overflow-hidden transition-all duration-200 cursor-pointer",
+        selected
+          ? "border-accent/50 shadow-md shadow-accent/5 ring-1 ring-accent/20"
+          : "border-border/60 hover:shadow-lg hover:border-accent/30 hover:shadow-accent/5"
+      )}
+      onClick={() => onFileClick(file)}
+      onMouseEnter={() => setHoverInfo(true)}
+      onMouseLeave={() => setHoverInfo(false)}
+    >
+      {/* Selection checkbox — always visible on mobile, hover on desktop */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onSelect(file.id); }}
+        className={cn(
+          "absolute top-1 left-1 z-30 flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded-md border transition-all",
+          selected
+            ? "border-accent bg-accent text-white"
+            : "border-white/40 text-transparent opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:border-accent/70"
+        )}
+        aria-label={selected ? "Deselect file" : "Select file"}
+      >
+        {selected && <Check className="h-4 w-4 sm:h-3 sm:w-3" />}
+      </button>
+
+      {file.isFavorite && (
+        <div className="absolute -top-1 -right-1 z-30 flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 shadow-md shadow-amber-400/20">
+          <Star className="h-3 w-3 fill-white text-white" />
+        </div>
+      )}
+
+      <ThumbnailCard file={file}>
+        {isVideo && <VideoOverlay file={file} hovered={hoverInfo} />}
+        {isAudio && <AudioOverlay />}
+
+        <div
+          className="absolute inset-x-2 bottom-2 z-30 flex md:hidden md:group-hover:flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <CardActions file={file} trash={trash} onAction={onFileAction} />
+        </div>
+      </ThumbnailCard>
+
+      <div className="px-3 py-2.5">
+        <p className="truncate text-sm font-semibold leading-tight">{file.name}</p>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="font-mono text-[11px] text-muted-foreground/70">{formatBytes(file.sizeBytes)}</span>
+          <span className="text-[10px] text-muted-foreground/50">{formatDate(file.updatedAt, "short")}</span>
+        </div>
+      </div>
+
+      {/* Hover info popover */}
+      {hoverInfo && <HoverInfoCard file={file} />}
+    </motion.div>
+  );
+});
+
+// ─── List Row ───────────────────────────────────────────────────────────────
+
+const ListRow = memo(function ListRow({
+  file, selected, trash, style, onFileAction, onFileClick, onSelect,
+}: {
+  file: FileRecord; selected: boolean; trash?: boolean;
+  style: React.CSSProperties; onFileAction: (a: string, f: FileRecord) => void;
+  onFileClick: (f: FileRecord) => void; onSelect: (id: string, shiftKey?: boolean) => void;
+}) {
+  const { openId, setOpenId, ref } = useDropdown();
+  const hasThumb = !!file.thumbnailKey;
+
+  return (
+    <div
+      style={style}
+      className={cn(
+        "grid grid-cols-[28px_1fr_60px] sm:grid-cols-[28px_2fr_100px_44px] md:grid-cols-[28px_2fr_1fr_1fr_44px] lg:grid-cols-[28px_2fr_1fr_1fr_1fr_44px] items-center gap-0 px-2 sm:px-4 border-b border-border/20 transition-colors text-sm cursor-pointer",
+        selected
+          ? "bg-accent/5 border-accent/10"
+          : "hover:bg-accent/[0.03]"
+      )}
+      onClick={() => onFileClick(file)}
+    >
+      {/* Checkbox */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onSelect(file.id, e.shiftKey); }}
+        className="flex items-center justify-center p-2 -m-2"
+        aria-label={selected ? "Deselect file" : "Select file"}
+      >
+        <div className={cn(
+          "flex h-5 w-5 sm:h-4 sm:w-4 items-center justify-center rounded border transition-colors",
+          selected
+            ? "border-accent bg-accent text-white"
+            : "border-border/50 text-transparent hover:border-accent/50"
+        )}>
+          {selected && <Check className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
+        </div>
+      </button>
+
+      {/* Name */}
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 pr-1 sm:pr-3">
+        <div className="shrink-0 w-8 h-8 rounded-lg overflow-hidden relative">
+          {hasThumb ? (
+            <img
+              src={`/api/files/${file.id}/thumbnail?size=80`}
+              alt={file.name}
+              loading="lazy"
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className={cn("w-full h-full flex items-center justify-center bg-gradient-to-br", getGradientFallback(file.mimeType))}>
+              <FileIcon mimeType={file.mimeType} className={cn("h-4 w-4", getAccentColor(file.mimeType))} />
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <span className="truncate text-sm font-medium block">{file.name}</span>
+          <span className="text-[10px] text-muted-foreground/50 sm:hidden">
+            {formatBytes(file.sizeBytes)} &middot; {getTypeLabel(file.mimeType)}
+          </span>
+        </div>
+        {file.isFavorite && <Star className="h-3 w-3 fill-amber-400 text-amber-400 shrink-0 hidden sm:block" />}
+        {file.isNote && <span className="shrink-0 rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-medium text-accent hidden sm:block">Note</span>}
+      </div>
+
+      {/* Size - hidden on smallest screens */}
+      <span className="font-mono text-xs text-muted-foreground/80 truncate hidden sm:block">{formatBytes(file.sizeBytes)}</span>
+
+      {/* Modified - hidden on sm and below */}
+      <span className="text-xs text-muted-foreground/70 truncate hidden sm:block md:text-left">{formatDate(file.updatedAt, "short")}</span>
+
+      {/* Type - hidden on md and below */}
+      <span className="text-xs text-muted-foreground/60 truncate hidden md:block">{getTypeLabel(file.mimeType)}</span>
+
+      {/* Actions */}
+      <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+        <div ref={ref} className="relative">
+          <Button
+            variant="ghost" size="icon"
+            className="h-10 w-10 sm:h-8 sm:w-8 rounded-lg text-muted-foreground/50 hover:text-foreground"
+            onClick={() => setOpenId(openId === file.id ? null : file.id)}
+            aria-label="More actions"
+          >
+            <MoreHorizontal className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+          </Button>
+          {openId === file.id && (
+            <DropdownItems file={file} trash={trash} onAction={onFileAction} onClose={() => setOpenId(null)} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ─── Thumbnail card ─────────────────────────────────────────────────────────
+
+function ThumbnailCard({ file, children }: { file: FileRecord; children: React.ReactNode }) {
+  const hasThumb = !!file.thumbnailKey;
+  const { containerRef, currentSrc, loaded, setLoaded, error, setError } = useThumbnail(file.id, hasThumb);
+
+  return (
+    <div ref={containerRef} className="relative w-full aspect-[4/3] overflow-hidden rounded-t-[14px]">
+      {hasThumb && !loaded && !error && (
+        <div className="absolute inset-0 bg-gradient-to-br from-muted/50 to-muted/80 animate-pulse" />
+      )}
+      {(!hasThumb || error) && (
+        <div className={cn(
+          "absolute inset-0 flex items-center justify-center bg-gradient-to-br",
+          getGradientFallback(file.mimeType)
+        )}>
+          <FileIcon mimeType={file.mimeType} className={cn("h-12 w-12 opacity-40", getAccentColor(file.mimeType))} />
+        </div>
+      )}
+      {currentSrc && !error && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={currentSrc}
+          alt={file.name}
+          loading="lazy"
+          onLoad={() => setLoaded(true)}
+          onError={() => setError(true)}
+          className={cn(
+            "absolute inset-0 w-full h-full object-cover transition-all duration-300",
+            loaded ? "opacity-100 scale-100" : "opacity-0 scale-105"
+          )}
+        />
+      )}
+      {children}
+    </div>
+  );
+}
+
+// ─── Dropdown ───────────────────────────────────────────────────────────────
+
+function DropdownItems({ file, trash, onAction, onClose }: {
+  file: FileRecord; trash?: boolean;
+  onAction: (action: string, file: FileRecord) => void;
+  onClose: () => void;
+}) {
+  const items = trash
+    ? [
+        { action: "restore", icon: RotateCcw, label: "Restore" },
+        { action: "delete", icon: Trash2, label: "Delete permanently", danger: true },
+      ]
+    : [
+        { action: "download", icon: Download, label: "Download" },
+        { action: "share", icon: Share2, label: "Share" },
+        { action: "rename", icon: Pencil, label: "Rename" },
+        { action: "favorite", icon: Star, label: file.isFavorite ? "Unfavorite" : "Favorite" },
+        { action: "duplicate", icon: Copy, label: "Duplicate" },
+        { action: "delete", icon: Trash2, label: "Move to trash", danger: true },
+      ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.92, y: 4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      className="absolute right-0 bottom-full mb-2 z-50 min-w-[160px] rounded-xl border border-border/60 bg-surface-elevated shadow-xl overflow-hidden"
+    >
+      {items.map(({ action, icon: Icon, label, danger }) => (
+        <button
+          key={action}
+          onClick={(e) => { e.stopPropagation(); onAction(action, file); onClose(); }}
+          className={cn(
+            "flex w-full items-center gap-2 px-3 py-2.5 text-xs font-medium transition-colors hover:bg-accent/10",
+            danger ? "text-danger hover:bg-danger/10" : "text-foreground"
+          )}
+        >
+          <Icon className="h-3.5 w-3.5 shrink-0" />
+          {label}
+        </button>
+      ))}
+    </motion.div>
+  );
+}
+
+// ─── Card actions ────────────────────────────────────────────────────────────
+
+function CardActions({ file, trash, onAction }: {
+  file: FileRecord; trash?: boolean;
+  onAction: (action: string, file: FileRecord) => void;
+}) {
+  const { openId, setOpenId, ref } = useDropdown();
+  const open = openId === file.id;
+
+  return (
+    <div ref={ref} className="relative flex items-center gap-1">
+      <Button
+        variant="ghost" size="icon-sm"
+        className="h-7 w-7 rounded-lg bg-surface/90 backdrop-blur-sm border border-border/40 text-muted-foreground hover:text-foreground"
+        onClick={() => onAction("download", file)} title="Download"
+      >
+        <Download className="h-3 w-3" />
+      </Button>
+      <Button
+        variant="ghost" size="icon-sm"
+        className="h-7 w-7 rounded-lg bg-surface/90 backdrop-blur-sm border border-border/40 text-muted-foreground hover:text-foreground"
+        onClick={() => setOpenId(open ? null : file.id)} title="More"
+      >
+        <MoreHorizontal className="h-3 w-3" />
+      </Button>
+      {open && <DropdownItems file={file} trash={trash} onAction={onAction} onClose={() => setOpenId(null)} />}
+    </div>
+  );
+}
+
+// ─── Video / Audio overlays ─────────────────────────────────────────────────
+
+function VideoOverlay({ file, hovered = false }: { file: FileRecord; hovered?: boolean }) {
+  const [loadError, setLoadError] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const el = videoRef.current;
+    if (!el || loadError) return;
+
+    if (hovered) {
+      el.currentTime = 0;
+      playPromiseRef.current = el.play();
+      playPromiseRef.current?.catch(() => {});
+    } else {
+      if (playPromiseRef.current) {
+        playPromiseRef.current.then(() => {
+          if (!cancelled) { el.pause(); el.currentTime = 0; }
+        }).catch(() => {});
+        playPromiseRef.current = null;
+      } else {
+        el.pause();
+        el.currentTime = 0;
+      }
+    }
+
+    return () => { cancelled = true; };
+  }, [hovered, loadError]);
+
+  return (
+    <>
+      {hovered && !loadError && (
+        <video
+          ref={videoRef}
+          src={`/api/files/${file.id}/preview`}
+          muted
+          loop
+          playsInline
+          onError={() => setLoadError(true)}
+          className="absolute inset-0 w-full h-full object-cover z-10"
+        />
+      )}
+      <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+        <div className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition-all duration-200",
+          hovered ? "scale-110 bg-black/60" : "scale-100"
+        )}>
+          <Play className="h-4 w-4 text-white ml-0.5" fill="white" />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AudioOverlay() {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 backdrop-blur-sm">
+        <Music className="h-7 w-7 text-emerald-500" />
+      </div>
+    </div>
+  );
+}
