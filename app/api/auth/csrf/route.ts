@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateCsrfToken, SECURITY_HEADERS } from "@/lib/security";
+import { cookieSecure } from "@/lib/env/runtime";
 
 export async function GET() {
   const token = generateCsrfToken();
@@ -9,7 +10,7 @@ export async function GET() {
   );
   res.cookies.set("csrf_token", token, {
     httpOnly: false,
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(),
     sameSite: "lax",
     path: "/",
   });

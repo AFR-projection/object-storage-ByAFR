@@ -5,6 +5,7 @@ import { sessions, users, type User } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { getAdminSettings } from "@/lib/admin-settings";
 import { logActivity } from "@/lib/auth/audit";
+import { cookieSecure } from "@/lib/env/runtime";
 
 const SESSION_COOKIE = "storage_session";
 const ROTATION_INTERVAL_MS = 1000 * 60 * 60 * 24; // 24 hours
@@ -170,7 +171,7 @@ export async function createSession(
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, sessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(),
     sameSite: "strict",
     path: "/",
     expires: expiresAt,
@@ -231,7 +232,7 @@ export async function rotateSession(
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, newSessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(),
     sameSite: "strict",
     path: "/",
     expires: expiresAt,

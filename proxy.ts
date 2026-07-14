@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { hstsEnabled } from "@/lib/env/runtime";
 
 const publicPaths = [
+  "/",
   "/login",
   "/register",
   "/maintenance",
@@ -13,35 +15,56 @@ const publicPaths = [
   "/api/shared",
 ];
 
+/** Obvious automated scrapers — never block browsers or health checks on pages. */
 const BOT_PATTERNS = [
-  /bot/i, /crawler/i, /spider/i, /scrape/i, /curl/i, /wget/i,
-  /python-requests/i, /go-http/i, /java\//i, /perl/i,
+  /bot/i, /crawler/i, /spider/i, /scrape/i,
+  /python-requests/i, /go-http-client/i, /java\//i, /perl/i,
 ];
 
+const SENSITIVE_API_PREFIXES = [
+  "/api/admin",
+  "/api/upload",
+  "/api/files",
+  "/api/folders",
+  "/api/download",
+  "/api/auth/sessions",
+  "/api/auth/password",
+];
+
+function isPublicPath(pathname: string): boolean {
+  return publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 function isBot(userAgent: string | null): boolean {
-  if (!userAgent) return true;
+  if (!userAgent) return false;
   return BOT_PATTERNS.some((p) => p.test(userAgent));
+}
+
+function isSensitiveApi(pathname: string): boolean {
+  return SENSITIVE_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  const isPublic = publicPaths.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`)
-  );
+  const isPublic = isPublicPath(pathname);
 
   if (isPublic || pathname.startsWith("/api/shared/")) {
     const response = NextResponse.next();
-    applySecurityHeaders(response);
+    applySecurityHeaders(response, request);
     return response;
   }
 
   const sessionCookie = request.cookies.get("storage_session");
-
-  // Bot detection for non-public routes
   const ua = request.headers.get("user-agent");
-  if (isBot(ua) && !pathname.startsWith("/api/")) {
-    return new NextResponse("Forbidden", { status: 403 });
+
+  // Bot protection: sensitive API routes only (not pages, login, or CSRF)
+  if (
+    pathname.startsWith("/api/") &&
+    isSensitiveApi(pathname) &&
+    isBot(ua) &&
+    !sessionCookie
+  ) {
+    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
   }
 
   if (!sessionCookie && !pathname.startsWith("/api/")) {
@@ -53,21 +76,22 @@ export async function proxy(request: NextRequest) {
   }
 
   const response = NextResponse.next();
-  applySecurityHeaders(response);
-
+  applySecurityHeaders(response, request);
   return response;
 }
 
-function applySecurityHeaders(response: NextResponse) {
+function applySecurityHeaders(response: NextResponse, request: NextRequest) {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("X-XSS-Protection", "1; mode=block");
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()");
-  response.headers.set(
-    "Strict-Transport-Security",
-    "max-age=63072000; includeSubDomains; preload"
-  );
+  if (hstsEnabled() || request.headers.get("x-forwarded-proto") === "https") {
+    response.headers.set(
+      "Strict-Transport-Security",
+      "max-age=63072000; includeSubDomains; preload"
+    );
+  }
   response.headers.set("X-DNS-Prefetch-Control", "on");
   response.headers.set("X-Permitted-Cross-Domain-Policies", "none");
   response.headers.set("Cross-Origin-Embedder-Policy", "credentialless");

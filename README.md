@@ -3,7 +3,7 @@
 Modern cloud storage web application — fast, secure, and scalable.  
 Built with **Next.js 16**, **Drizzle ORM**, **Cloudflare R2**, and **Redis**.
 
-**Quick links:** [Local dev](#-local-development) · [Deploy VPS (5 langkah)](#deploy-ke-vps-panduan-lengkap) · [Troubleshooting](#troubleshooting)
+**Quick links:** [Local dev](#local-development) · **[Deploy VPS → DEPLOY.md](DEPLOY.md)** · [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -56,16 +56,13 @@ Built with **Next.js 16**, **Drizzle ORM**, **Cloudflare R2**, and **Redis**.
 
 ## Prerequisites
 
-- **Node.js** ≥ 20.x
-- **npm** ≥ 10.x
-- **PostgreSQL** (Neon — serverless, or local via Docker)
-- **Cloudflare R2 bucket** (or any S3-compatible provider)
-- **Redis** (optional — can be disabled for development)
-- **Docker** (optional, for deployment)
+**Local development:** Node.js ≥ 20, npm ≥ 10, Neon Postgres, Cloudflare R2, Redis optional (`REDIS_DISABLED=true`).
+
+**Production VPS:** Ubuntu 22.04+, Docker — lihat **[DEPLOY.md](DEPLOY.md)**.
 
 ---
 
-## 🚀 Local Development
+## Local Development
 
 ### 1. Clone & Install
 
@@ -148,329 +145,42 @@ docker compose -f docker/docker-compose.dev.yml up -d
 
 ---
 
----
+## Production Deployment (VPS)
 
-## Deploy ke VPS (Panduan Lengkap)
+Deploy production **tidak** dijelaskan di file ini — semua ada di **[DEPLOY.md](DEPLOY.md)**.
 
-> **Jawaban singkat:** Ya, website ini **siap deploy ke VPS mana pun** (Ubuntu/Debian recommended).  
-> Stack production sudah ada: **Docker Compose + Nginx + Redis + Worker** — cukup **1 command** setelah `.env` diisi.
-
-### Yang kamu butuhkan (sebelum mulai)
-
-| Layanan | Wajib? | Fungsi | Gratis tier? |
-|---------|--------|--------|--------------|
-| **VPS** (Ubuntu 22.04+) | ✅ | Jalankan app | Vultr, DigitalOcean, Hetzner, dll. |
-| **Neon PostgreSQL** | ✅ | Database | ✅ Free tier |
-| **Cloudflare R2** | ✅ | Storage file | ✅ Free tier |
-| **Domain** | ❌ | Bisa pakai IP VPS dulu | — |
-
-VPS **tidak perlu** install Node.js manual — semua jalan di dalam Docker.
-
----
-
-### Deploy dalam 5 langkah
-
-#### Langkah 1 — Siapkan VPS
-
-SSH ke VPS, lalu install Docker:
-
-```bash
-ssh root@IP-VPS-KAMU
-
-# Install Docker (pilih salah satu)
-curl -fsSL https://get.docker.com | sh
-# atau dari repo:
-git clone <repo-url> /opt/storage-by-afr
-cd /opt/storage-by-afr
-sudo bash scripts/vps-install.sh
-```
-
-Logout & login lagi SSH jika pakai user non-root (supaya grup `docker` aktif).
-
-#### Langkah 2 — Clone project
-
-```bash
-git clone <repo-url> /opt/storage-by-afr
-cd /opt/storage-by-afr
-```
-
-#### Langkah 3 — Isi file `.env`
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-**Wajib diisi sebelum deploy:**
-
-| Variable | Contoh |
-|----------|--------|
-| `DATABASE_URL` | `postgresql://...@ep-xxx.neon.tech/storage?sslmode=require` |
-| `R2_ACCOUNT_ID` | Dari Cloudflare R2 dashboard |
-| `R2_ACCESS_KEY_ID` | R2 API token |
-| `R2_SECRET_ACCESS_KEY` | R2 API token |
-| `R2_BUCKET_NAME` | `storage-by-afr` |
-| `R2_PUBLIC_URL` | `https://pub-xxxx.r2.dev` |
-| `MASTER_PASSWORD` | Password admin kuat |
-| `SESSION_SECRET` | Random 64+ karakter (auto-generate saat deploy pertama) |
-| `NEXT_PUBLIC_APP_URL` | `http://IP-VPS` atau `https://domain.com` |
-
-> **Penting:** `NEXT_PUBLIC_APP_URL` harus **persis** URL yang user buka di browser (termasuk `http://` atau `https://`).
-
-#### Langkah 4 — Deploy (1 command)
-
-```bash
-chmod +x scripts/vps-deploy.sh scripts/vps-update.sh
-./scripts/vps-deploy.sh
-# atau: npm run deploy:vps
-```
-
-Script otomatis:
-1. Validasi `.env`
-2. Build & start: **app**, **worker**, **redis**, **nginx**
-3. Tunggu app healthy
-4. Jalankan **db:push** + **bootstrap** (master admin)
-
-#### Langkah 5 — Buka website
-
-- **Via Nginx (port 80):** `http://IP-VPS-KAMU`
-- Login: `MASTER_USERNAME` / `MASTER_PASSWORD` dari `.env`
-
----
-
-### Setelah deploy — checklist
-
-- [ ] **R2 CORS** — Cloudflare Dashboard → R2 → Bucket → CORS  
-  Edit [`docker/r2-cors.json`](docker/r2-cors.json), ganti `your-domain.com` dengan domain/IP VPS, lalu:
-  ```bash
-  wrangler r2 bucket cors set NAMA-BUCKET --file docker/r2-cors.json
-  ```
-- [ ] **Firewall VPS** — buka port **80** (dan **443** jika pakai SSL):
-  ```bash
-  sudo ufw allow 80
-  sudo ufw allow 443
-  sudo ufw enable
-  ```
-- [ ] **HTTPS (Let's Encrypt)** — lihat bagian SSL di bawah
-
----
-
-### Perintah VPS sehari-hari
-
-```bash
-cd /opt/storage-by-afr
-
-npm run deploy:logs      # Lihat log semua service
-npm run deploy:down      # Stop semua container
-npm run deploy:up        # Start ulang (tanpa setup DB)
-./scripts/vps-update.sh  # git pull + rebuild (update versi)
-npm run deploy:setup     # Ulang DB push + bootstrap (jika perlu)
-```
-
----
-
-### SSL / HTTPS (Let's Encrypt)
-
-**Opsi A — Certbot di host (recommended, nginx tetap di Docker port 80/443):**
-
-Stop nginx container sementara, atau proxy certbot via host nginx. Cara paling simpel — pasang certbot di VPS dan arahkan domain ke IP VPS:
-
-```bash
-sudo apt update && sudo apt install -y certbot
-# Stop nginx docker dulu agar port 80 bebas:
-docker compose -f docker/docker-compose.yml stop nginx
-
-sudo certbot certonly --standalone -d storage.domain.com
-
-# Copy cert ke folder docker:
-sudo cp /etc/letsencrypt/live/storage.domain.com/fullchain.pem docker/certs/
-sudo cp /etc/letsencrypt/live/storage.domain.com/privkey.pem docker/certs/
-```
-
-Uncomment block HTTPS di [`docker/nginx.conf`](docker/nginx.conf), update `server_name`, lalu:
-
-```bash
-docker compose -f docker/docker-compose.yml up -d nginx
-```
-
-Update `.env`: `NEXT_PUBLIC_APP_URL=https://storage.domain.com` → rebuild app:
-```bash
-docker compose -f docker/docker-compose.yml up -d --build app
-```
-
-**Opsi B — Tanpa domain (IP saja):** cukup `http://IP-VPS` — upload tetap jalan jika R2 CORS sudah benar.
-
----
-
-### Arsitektur Docker di VPS
-
-```
-docker/
-├── docker-compose.yml    # Production stack (app + worker + redis + nginx)
-├── docker-compose.dev.yml
-├── Dockerfile            # Next.js app (multi-stage standalone)
-├── Dockerfile.worker     # Background jobs (thumbnail, cleanup)
-├── Dockerfile.setup      # One-shot: db:push + bootstrap
-├── nginx.conf            # Reverse proxy, upload max 5GB
-├── r2-cors.json          # Template CORS untuk R2
-└── certs/                # SSL certs (HTTPS)
-```
-
-| Service | Port | Fungsi |
-|---------|------|--------|
-| `nginx` | **80**, 443 | Reverse proxy (akses user) |
-| `app` | 3000 | Next.js server |
-| `worker` | — | Thumbnail, cleanup, webhooks |
-| `redis` | 6379 (internal) | Cache + job queue |
-| `setup` | — | One-shot DB setup (profile) |
-
----
-
-### Opsi deploy alternatif (tanpa Docker)
-
-Kalau VPS sudah punya Node.js 20 + Redis + Nginx:
-
-```bash
-cd /opt/storage-by-afr
-cp .env.example .env && nano .env
-# Set REDIS_DISABLED=false dan REDIS_URL=redis://127.0.0.1:6379
-
-npm ci
-npm run build
-npm run db:push
-npm run bootstrap
-
-# PM2
-npm install -g pm2
-pm2 start ecosystem.config.js
-pm2 save && pm2 startup
-```
-
-Nginx di host → proxy ke `127.0.0.1:3000` (config di bawah).
-
----
-
-### Opsi 2: Manual Docker Compose
-
-```bash
-cd /opt/storage-by-afr
-cp .env.example .env && nano .env
-docker compose -f docker/docker-compose.yml up -d --build
-docker compose -f docker/docker-compose.yml --profile setup run --rm setup
-```
-
----
-
-## 🖥️ VPS Deployment (English summary)
-
-**One-command deploy** after configuring `.env`:
+| Script | Fungsi |
+|--------|--------|
+| `./install.sh` | Install pertama — wizard interaktif, SSL, deploy, health check |
+| `./deploy.sh` | Deploy ulang (pakai `.env` yang sudah ada) |
+| `./update.sh` | Update aman — backup, pull, rebuild, migrate |
 
 ```bash
 git clone <repo-url> /opt/storage-by-afr && cd /opt/storage-by-afr
-cp .env.example .env && nano .env
-chmod +x scripts/vps-deploy.sh && ./scripts/vps-deploy.sh
+chmod +x install.sh update.sh deploy.sh
+./install.sh
 ```
 
-Requires: Ubuntu 22.04+, Docker, Neon Postgres, Cloudflare R2.  
-See Indonesian guide above for SSL, CORS, firewall, and daily commands.
+Wizard otomatis membuat `.env` — tidak perlu edit manual.  
+Untuk requirement server, firewall, SSL, R2 CORS, backup, update, dan troubleshooting production → **[DEPLOY.md](DEPLOY.md)**.
 
 ---
 
-### Nginx di host (opsi PM2 / tanpa Docker nginx)
+## Environment Variables
 
-Create `/etc/nginx/sites-available/storage-by-afr`:
+Template lengkap: [`.env.example`](.env.example)
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    client_max_body_size 10G;
-    proxy_request_buffering off;
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-
-        # Timeout for large uploads
-        proxy_connect_timeout 300;
-        proxy_send_timeout 300;
-        proxy_read_timeout 300;
-    }
-
-    # Cache static assets
-    location /_next/static {
-        proxy_pass http://127.0.0.1:3000;
-        expires 365d;
-        add_header Cache-Control "public, immutable";
-    }
-}
-```
-
-```bash
-sudo ln -s /etc/nginx/sites-available/storage-by-afr /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### SSL with Let's Encrypt
-
-```bash
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
-```
+| Variable | Dev | Production |
+|----------|-----|------------|
+| `DATABASE_URL` | Neon / local Postgres | Neon (via wizard) |
+| `R2_*` | Cloudflare R2 | Cloudflare R2 (via wizard) |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | `https://domain.com` (auto) |
+| `REDIS_DISABLED` | `true` OK | `false` (Docker Redis) |
+| `COOKIE_SECURE` | `false` | `true` (auto via wizard) |
 
 ---
 
-## 🔧 Environment Variables Reference
-
-File `.env.example` contains a complete template. Here is the full reference:
-
-```env
-# ── Database ──────────────────────────────────────────────
-DATABASE_URL=postgresql://user:pass@host:5432/db?sslmode=require
-
-# ── Cloudflare R2 ─────────────────────────────────────────
-R2_ACCOUNT_ID=your-account-id
-R2_ACCESS_KEY_ID=your-access-key
-R2_SECRET_ACCESS_KEY=your-secret-key
-R2_BUCKET_NAME=your-bucket
-R2_PUBLIC_URL=https://pub-xxxx.r2.dev
-
-# ── Redis ─────────────────────────────────────────────────
-REDIS_URL=redis://localhost:6379
-REDIS_DISABLED=true              # Set true if running without Redis
-
-# ── Session ───────────────────────────────────────────────
-SESSION_SECRET=change-this-to-a-random-64-character-string
-
-# ── Master Admin ──────────────────────────────────────────
-MASTER_USERNAME=ByAFR
-MASTER_PASSWORD=your-strong-password
-
-# ── App ───────────────────────────────────────────────────
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-
-# ── Limits ────────────────────────────────────────────────
-MAX_FILE_SIZE_BYTES=5368709120   # 5GB
-UPLOAD_URL_EXPIRY_SECONDS=900    # 15 minutes
-DOWNLOAD_URL_EXPIRY_SECONDS=60   # 1 minute
-
-# ── Rate Limiting ─────────────────────────────────────────
-RATE_LIMIT_LOGIN_MAX=5
-RATE_LIMIT_LOGIN_WINDOW_MS=900000
-```
-
----
-
-## 📁 Project Architecture
+## Project Architecture
 
 ```
 storage-by-afr/
@@ -504,8 +214,9 @@ storage-by-afr/
 │   ├── security/           # Rate limiting, CSRF, file validation, suspicious activity
 │   └── storage/            # Cloudflare R2 client
 ├── workers/                # Background job worker
-├── scripts/                # CLI utilities (bootstrap, reset password)
-└── docker/                 # Docker Compose + config
+├── scripts/                # CLI + deploy (see scripts/deploy/)
+├── install.sh              # Production installer entry point
+└── docker/                 # Docker Compose + nginx template
 ```
 
 ### Upload Data Flow
@@ -530,84 +241,56 @@ Browser ──presigned URL──► Cloudflare R2 ──complete──► Next.
 
 ## Troubleshooting
 
-### Redis Error `[ioredis] Unhandled error event`
+### Local development
 
-Redis is not running. Choose one:
+**Redis `[ioredis] Unhandled error event`**
 
-- **Option A (quick):** Set `REDIS_DISABLED=true` in `.env` — cache & queue are disabled, app still works
-- **Option B:** Start Redis via Docker:
-  ```bash
-  docker compose -f docker/docker-compose.dev.yml up -d
-  ```
-  Then remove `REDIS_DISABLED` from `.env`
+- Set `REDIS_DISABLED=true` in `.env`, or start Redis: `docker compose -f docker/docker-compose.dev.yml up -d`
 
-### Upload fails / CORS error
+**Upload fails / CORS error**
 
-Cloudflare R2 requires **CORS** configuration for browser uploads.  
-Configure via R2 Dashboard → bucket → Settings → CORS.  
-Use [`docker/r2-cors.json`](docker/r2-cors.json) and add your origin domain.
+- Configure R2 CORS using [`docker/r2-cors.json`](docker/r2-cors.json) with `http://localhost:3000`
 
-### Worker error `ENOTFOUND redis`
+**Worker `ENOTFOUND redis`**
 
-The worker uses the hostname `redis` (only valid inside Docker network).  
-For local development: set `REDIS_DISABLED=true` in `.env` — do not run `npm run worker`.
+- Worker hostname `redis` only works inside Docker. Locally: set `REDIS_DISABLED=true` and skip `npm run worker`.
 
-### Build Error `Type 'Redis' is not assignable to type 'ConnectionOptions'`
+**Folder upload structure**
 
-Type incompatibility between `ioredis` and `bullmq`.  
-Fix: `lib/queue/index.ts` already uses `as unknown as import("bullmq").ConnectionOptions`.
+- Chrome/Edge `showDirectoryPicker()` preserves paths; `webkitdirectory` fallback uses timestamp folder name.
 
-### Login gagal setelah deploy
+### Production (VPS)
 
-1. Pastikan setup jalan: `npm run deploy:setup`
-2. Reset password master: `npm run reset-master-password` (di host dengan `.env`, atau via setup container)
-3. Login pakai `MASTER_USERNAME` / `MASTER_PASSWORD` dari `.env`
-
-### Deploy VPS: container tidak start
-
-```bash
-docker compose -f docker/docker-compose.yml ps
-docker compose -f docker/docker-compose.yml logs app --tail 100
-```
-
-Penyebab umum: `.env` belum lengkap, `DATABASE_URL` salah, atau port 80 sudah dipakai service lain.
-
-### Upload gagal setelah deploy VPS
-
-1. `NEXT_PUBLIC_APP_URL` di `.env` harus match URL browser
-2. R2 CORS harus include domain/IP VPS (lihat `docker/r2-cors.json`)
-3. `R2_PUBLIC_URL` harus diisi
-
-### Folder upload does not preserve structure
-
-`webkitRelativePath` excludes the parent folder name.  
-Modern browsers (Chrome/Edge) use `showDirectoryPicker()` which handles this correctly.  
-The fallback assigns a timestamp-based folder name.
+Login, SSL, container, upload issues after deploy → **[DEPLOY.md § Troubleshooting](DEPLOY.md#troubleshooting)**
 
 ---
 
-## Development Commands
+## Commands
+
+### Development
 
 ```bash
-npm run dev                   # Development server
+npm run dev                   # Dev server
 npm run build                 # Production build
 npm run start                 # Start production server
-npm run lint                  # ESLint check
-npm run db:generate           # Generate Drizzle migration
-npm run db:migrate            # Run migration
-npm run db:push               # Push schema (dev)
-npm run db:studio             # Drizzle Studio (GUI database)
+npm run lint                  # ESLint
+npm run db:push               # Push schema
+npm run db:studio             # Drizzle Studio
 npm run bootstrap             # Create master admin
 npm run reset-master-password # Reset master password
-npm run deploy:vps              # Deploy ke VPS (one-command)
-npm run deploy:update           # Update VPS (git pull + rebuild)
-npm run deploy:install          # Install Docker di VPS (root)
-npm run deploy:up               # Start Docker stack
-npm run deploy:down             # Stop Docker stack
-npm run deploy:logs             # Docker logs
-npm run deploy:setup            # DB push + bootstrap (Docker)
-npm run worker                  # Start BullMQ worker (local dev)
+npm run worker                # Background worker (needs Redis)
 ```
+
+### Production (VPS)
+
+```bash
+./install.sh                  # First install (wizard)
+./update.sh                   # Safe update
+npm run deploy:logs           # Container logs
+npm run deploy:health         # Service health check
+```
+
+Detail deploy → **[DEPLOY.md](DEPLOY.md)**
 
 ---
 
