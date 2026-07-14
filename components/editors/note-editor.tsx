@@ -33,11 +33,20 @@ export function NoteEditor({ file, onClose }: NoteEditorProps) {
   });
 
   useEffect(() => {
+    if (!editor) return;
+
+    let cancelled = false;
+
     apiFetch<{ file: FileRecord; content: { contentJson: unknown } | null }>(`/api/files/${file.id}`).then((res) => {
-      if (res.data?.content?.contentJson && editor) {
+      if (cancelled || !editor || editor.isDestroyed) return;
+      if (res.data?.content?.contentJson) {
         editor.commands.setContent(res.data.content.contentJson as Record<string, unknown>);
       }
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [file.id, editor]);
 
   const save = useCallback(
@@ -55,10 +64,20 @@ export function NoteEditor({ file, onClose }: NoteEditorProps) {
 
   useEffect(() => {
     if (!editor) return;
-    const handler = () => save(editor.getJSON());
+    const handler = () => {
+      if (!editor.isDestroyed) save(editor.getJSON());
+    };
     editor.on("update", handler);
-    return () => { editor.off("update", handler); };
+    return () => {
+      editor.off("update", handler);
+    };
   }, [editor, save]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    };
+  }, []);
 
   return (
     <motion.div

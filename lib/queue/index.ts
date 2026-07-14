@@ -42,17 +42,39 @@ export type JobType =
   | "compress_image"
   | "trim_media"
   | "recalculate_quota"
-  | "deliver_webhook";
+  | "deliver_webhook"
+  | "cleanup_schedules";
 
 export async function enqueueJob(
   type: JobType,
-  data: Record<string, unknown>
+  data: Record<string, unknown> = {},
+  opts?: { jobId?: string; repeat?: { every: number } }
 ): Promise<void> {
   try {
     const q = getQueue();
     if (!q) return;
-    await q.add(type, { type, ...data });
+    await q.add(type, { type, ...data }, opts);
   } catch {
     // Jobs are optional in dev without Redis
+  }
+}
+
+/** Ensure hourly cleanup repeatable job is registered. */
+export async function ensureCleanupSchedule(): Promise<void> {
+  try {
+    const q = getQueue();
+    if (!q) return;
+    await q.add(
+      "cleanup_schedules",
+      { type: "cleanup_schedules" },
+      {
+        jobId: "cleanup-schedules-hourly",
+        repeat: { every: 60 * 60 * 1000 },
+        removeOnComplete: 20,
+        removeOnFail: 20,
+      }
+    );
+  } catch {
+    // ignore
   }
 }

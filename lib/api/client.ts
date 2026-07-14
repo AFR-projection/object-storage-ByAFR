@@ -1,5 +1,7 @@
 "use client";
 
+import { storeSecurityAlert } from "@/components/auth/security-alert";
+
 let csrfToken: string | null = null;
 
 export async function getCsrfToken(): Promise<string> {
@@ -10,10 +12,39 @@ export async function getCsrfToken(): Promise<string> {
   return csrfToken!;
 }
 
+type ApiResult<T> = {
+  success: boolean;
+  data?: T;
+  error?: string;
+  code?: string;
+  previousIp?: string;
+  currentIp?: string;
+};
+
+function handleAuthSecurityCodes(json: ApiResult<unknown>, status: number) {
+  if (status !== 401) return;
+  const code = json.code;
+  if (code !== "SESSION_IP_CHANGED" && code !== "SESSION_INACTIVE") return;
+
+  storeSecurityAlert({
+    code,
+    message: json.error,
+    previousIp: json.previousIp,
+    currentIp: json.currentIp,
+  });
+
+  if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    const params = new URLSearchParams({ alert: code });
+    if (json.previousIp) params.set("previousIp", json.previousIp);
+    if (json.currentIp) params.set("currentIp", json.currentIp);
+    window.location.href = `/login?${params.toString()}`;
+  }
+}
+
 export async function apiFetch<T>(
   url: string,
   options: RequestInit = {}
-): Promise<{ success: boolean; data?: T; error?: string }> {
+): Promise<ApiResult<T>> {
   const method = options.method?.toUpperCase() ?? "GET";
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -27,7 +58,9 @@ export async function apiFetch<T>(
   }
 
   const res = await fetch(url, { ...options, headers });
-  return res.json();
+  const json = (await res.json()) as ApiResult<T>;
+  handleAuthSecurityCodes(json, res.status);
+  return json;
 }
 
 async function cancelPendingUpload(fileId: string) {

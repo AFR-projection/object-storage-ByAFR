@@ -1,23 +1,64 @@
-import { redisIncr } from "@/lib/cache/redis";
-import { checkIpRateLimit as memCheckIp, resetIpRateLimit as memResetIp } from "./rate-limiter";
+import { redisIncr, redisGetInt, redisDel } from "@/lib/cache/redis";
+import {
+  checkIpRateLimit as memCheckIp,
+  peekIpRateLimit as memPeekIp,
+  resetIpRateLimit as memResetIp,
+} from "./rate-limiter";
 
+function loginMemIp(key: string): string {
+  return key.replace(/^login:/, "");
+}
+
+function redisWindowKey(key: string, windowMs: number): string {
+  return `ratelimit:${key}:${Math.floor(Date.now() / windowMs)}`;
+}
+
+/** Increment + check (used when recording a failure). */
 export async function checkRateLimit(
   key: string,
   maxAttempts: number,
   windowMs: number
 ): Promise<{ allowed: boolean; remaining: number }> {
-  const count = await redisIncr(`ratelimit:${key}:${Math.floor(Date.now() / windowMs)}`, windowMs);
+  const count = await redisIncr(redisWindowKey(key, windowMs), windowMs);
 
   if (count === null) {
-    // Redis unavailable — use in-memory fallback
-    const ip = key.replace(/^login:/, "");
-    return memCheckIp(ip, maxAttempts, windowMs);
+    return memCheckIp(loginMemIp(key), maxAttempts, windowMs);
   }
 
   return {
     allowed: count <= maxAttempts,
     remaining: Math.max(0, maxAttempts - count),
   };
+}
+
+/** Read-only check — does not increment. */
+export async function peekRateLimit(
+  key: string,
+  maxAttempts: number,
+  windowMs: number
+): Promise<{ allowed: boolean; remaining: number; count: number }> {
+  const count = await redisGetInt(redisWindowKey(key, windowMs));
+
+  if (count === null) {
+    const n = memPeekIp(loginMemIp(key), windowMs);
+    return {
+      allowed: n < maxAttempts,
+      remaining: Math.max(0, maxAttempts - n),
+      count: n,
+    };
+  }
+
+  return {
+    allowed: count < maxAttempts,
+    remaining: Math.max(0, maxAttempts - count),
+    count,
+  };
+}
+
+/** Best-effort clear of the current window bucket. */
+export async function resetRateLimit(key: string, windowMs: number): Promise<void> {
+  await redisDel(redisWindowKey(key, windowMs));
+  memResetIp(loginMemIp(key));
 }
 
 export function checkIpRateLimit(

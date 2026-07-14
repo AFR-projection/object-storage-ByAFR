@@ -174,7 +174,7 @@ export function TextViewer({ src, fileName, mimeType }: TextViewerProps) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(src)
+    fetch(src, { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load");
         const contentLen = r.headers.get("content-length");

@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const publicPaths = ["/login", "/shared", "/api/auth/login", "/api/auth/csrf", "/api/shared"];
+const publicPaths = [
+  "/login",
+  "/register",
+  "/maintenance",
+  "/shared",
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/csrf",
+  "/api/auth/maintenance",
+  "/api/shared",
+];
 
 const BOT_PATTERNS = [
   /bot/i, /crawler/i, /spider/i, /scrape/i, /curl/i, /wget/i,

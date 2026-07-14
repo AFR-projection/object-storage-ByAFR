@@ -67,6 +67,7 @@ interface DashboardStats {
   storageUsed: number;
   storageQuota: number;
   storageRemaining: number;
+  storageWarningThreshold?: number;
 }
 
 interface ActivityItem {
@@ -180,11 +181,22 @@ function StatCard({
 
 // ─── Storage Bar ──────────────────────────────────────────────────────────────
 
-function StorageBar({ used, quota, remaining }: { used: number; quota: number; remaining: number }) {
+function StorageBar({
+  used,
+  quota,
+  remaining,
+  warningThreshold = 85,
+}: {
+  used: number;
+  quota: number;
+  remaining: number;
+  warningThreshold?: number;
+}) {
   const usedPct = quota > 0 ? (used / quota) * 100 : 0;
   const remainingPct = quota > 0 ? (remaining / quota) * 100 : 0;
-  const danger = usedPct > 85;
-  const warning = usedPct > 65 && !danger;
+  const warnAt = Math.min(100, Math.max(50, warningThreshold));
+  const danger = usedPct > warnAt;
+  const warning = usedPct > warnAt - 20 && !danger;
 
   return (
     <motion.div
@@ -560,6 +572,7 @@ export default function DashboardPage() {
           used={stats.storageUsed}
           quota={stats.storageQuota}
           remaining={stats.storageRemaining}
+          warningThreshold={stats.storageWarningThreshold}
         />
         <ActivitySection items={recentActivity} />
       </div>

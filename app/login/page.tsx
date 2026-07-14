@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Cloud, Loader2, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
+import {
+  SecurityAlertBanner,
+  useSecurityAlertFromStorage,
+} from "@/components/auth/security-alert";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +23,21 @@ export default function LoginPage() {
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
   const [useRecovery, setUseRecovery] = useState(false);
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const { alert: securityAlert, dismiss: dismissSecurityAlert } =
+    useSecurityAlertFromStorage();
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("registration") === "disabled") {
+        setError("Public registration is currently disabled");
+      }
+    }
+    apiFetch<{ enabled: boolean }>("/api/auth/register").then((res) => {
+      if (res.success && res.data?.enabled) setRegistrationEnabled(true);
+    });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,6 +58,7 @@ export default function LoginPage() {
         requires2fa?: boolean;
         pendingToken?: string;
         mustChangePassword?: boolean;
+        newDevice?: boolean;
       }>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify(body),
@@ -53,6 +74,14 @@ export default function LoginPage() {
         setTotpCode("");
         setUseRecovery(false);
         return;
+      }
+
+      if (res.data?.newDevice) {
+        try {
+          sessionStorage.setItem("new_login_notice", "1");
+        } catch {
+          // ignore
+        }
       }
 
       if (res.data?.mustChangePassword) {
@@ -99,6 +128,12 @@ export default function LoginPage() {
       >
         <div className="relative rounded-2xl border border-border/60 bg-surface/70 px-8 py-10 shadow-xl backdrop-blur-2xl">
           <div className="pointer-events-none absolute inset-0 rounded-2xl bg-accent-gradient opacity-[0.04] blur-[2px]" />
+
+          {securityAlert && (
+            <div className="relative mb-2">
+              <SecurityAlertBanner alert={securityAlert} onDismiss={dismissSecurityAlert} />
+            </div>
+          )}
 
           <div className="relative mb-8 text-center">
             <motion.div
@@ -214,6 +249,15 @@ export default function LoginPage() {
                 "Sign In"
               )}
             </Button>
+
+            {!pendingToken && registrationEnabled && (
+              <p className="text-center text-sm text-muted-foreground">
+                Don&apos;t have an account?{" "}
+                <Link href="/register" className="font-medium text-accent hover:underline">
+                  Create account
+                </Link>
+              </p>
+            )}
           </form>
         </div>
 

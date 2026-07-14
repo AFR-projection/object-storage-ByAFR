@@ -7,32 +7,21 @@ import {
   Settings2,
   Shield,
   HardDrive,
-  Timer,
-  Upload,
-  Ban,
-  Mail,
+  FileWarning,
+  Sliders,
+  Server,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Loader2,
+  X,
   Database,
-  Download,
-  Gauge,
-  Globe,
-  Lock,
   Save,
   RotateCcw,
   CheckCircle2,
   AlertCircle,
-  X,
   ChevronDown,
-  Clock,
   Users,
-  FileWarning,
-  Sliders,
-  Wifi,
-  Server,
-  RefreshCw,
-  Bell,
-  Eye,
-  EyeOff,
-  Loader2,
 } from "lucide-react";
 import type { AdminSettings } from "@/app/api/admin/settings/route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,7 +63,7 @@ const SETTING_SECTIONS: Section[] = [
     icon: Settings2,
     gradient: "from-slate-500 to-zinc-500",
     fields: [
-      { key: "registrationEnabled", label: "Allow Registration", description: "Allow new users to sign up", type: "toggle" },
+      { key: "registrationEnabled", label: "Allow Registration", description: "Show public Sign up page and allow self-service accounts", type: "toggle" },
       { key: "maintenanceMode", label: "Maintenance Mode", description: "Block all user access except admins", type: "toggle" },
       { key: "maintenanceMessage", label: "Maintenance Message", description: "Message shown to users during maintenance", type: "text", placeholder: "System is under maintenance..." },
     ],
@@ -119,27 +108,11 @@ const SETTING_SECTIONS: Section[] = [
   {
     id: "retention",
     title: "Retention",
-    description: "Data retention and backup configuration",
+    description: "Activity log retention (auto-cleanup needs worker + Redis)",
     icon: Database,
     gradient: "from-blue-500 to-cyan-500",
     fields: [
-      { key: "logRetentionDays", label: "Log Retention", description: "How long to keep activity logs", type: "number", unit: "days", min: 7, max: 730 },
-      { key: "backupEnabled", label: "Backup Enabled", description: "Enable automated backups", type: "toggle" },
-      { key: "backupSchedule", label: "Backup Schedule", description: "How often to run backups", type: "select", options: [
-        { label: "Daily", value: "daily" },
-        { label: "Weekly", value: "weekly" },
-        { label: "Monthly", value: "monthly" },
-      ]},
-    ],
-  },
-  {
-    id: "notifications",
-    title: "Notifications",
-    description: "Email and alert configuration",
-    icon: Bell,
-    gradient: "from-rose-500 to-pink-500",
-    fields: [
-      { key: "smtpConfigured", label: "SMTP Configured", description: "Email server is set up for notifications", type: "toggle" },
+      { key: "logRetentionDays", label: "Log Retention", description: "How long to keep activity logs (cleaned hourly by the worker)", type: "number", unit: "days", min: 7, max: 730 },
     ],
   },
 ];
@@ -404,7 +377,8 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     if (data && !values) {
-      setValues(data);
+      const { _meta: _, ...settings } = data as AdminSettings & { _meta?: unknown };
+      setValues(settings as AdminSettings);
     }
   }, [data, values]);
 
@@ -418,8 +392,8 @@ export default function AdminSettingsPage() {
       return res.data;
     },
     onSuccess: () => {
-      setSuccessMsg("Settings saved successfully");
-      setTimeout(() => setSuccessMsg(""), 3000);
+      setSuccessMsg("Settings saved to database — takes effect within ~30 seconds");
+      setTimeout(() => setSuccessMsg(""), 4000);
       queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
     },
     onError: (err) => {
@@ -455,7 +429,9 @@ export default function AdminSettingsPage() {
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Settings</h1>
-            <p className="text-sm text-muted-foreground/60">Configure system-wide preferences and policies</p>
+            <p className="text-sm text-muted-foreground/60">
+              Saved to database — takes effect within ~30 seconds
+            </p>
           </div>
         </div>
       </motion.div>

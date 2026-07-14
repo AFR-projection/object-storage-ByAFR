@@ -21,6 +21,8 @@ export function VideoViewer({ src, fileName }: VideoViewerProps) {
   const [buffered, setBuffered] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [retryKey, setRetryKey] = useState(0);
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
 
   const formatTime = (s: number) => {
@@ -46,17 +48,26 @@ export function VideoViewer({ src, fileName }: VideoViewerProps) {
       if (v.buffered.length > 0) setBuffered(v.buffered.end(v.buffered.length - 1));
     };
     const onEnded = () => setPlaying(false);
+    const onCanPlay = () => { setLoading(false); setLoadError(false); };
+    const onWaiting = () => setLoading(true);
+    const onPlaying = () => setLoading(false);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("loadedmetadata", onDuration);
     v.addEventListener("progress", onBuffer);
     v.addEventListener("ended", onEnded);
+    v.addEventListener("canplay", onCanPlay);
+    v.addEventListener("waiting", onWaiting);
+    v.addEventListener("playing", onPlaying);
     return () => {
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("loadedmetadata", onDuration);
       v.removeEventListener("progress", onBuffer);
       v.removeEventListener("ended", onEnded);
+      v.removeEventListener("canplay", onCanPlay);
+      v.removeEventListener("waiting", onWaiting);
+      v.removeEventListener("playing", onPlaying);
     };
-  }, []);
+  }, [retryKey]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -104,18 +115,29 @@ export function VideoViewer({ src, fileName }: VideoViewerProps) {
         {loadError ? (
           <div className="text-center text-white/60 p-8">
             <Play className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">Video tidak dapat diputar</p>
+            <p className="text-sm mb-3">Video tidak dapat diputar</p>
+            <Button variant="secondary" size="sm" onClick={() => { setLoadError(false); setLoading(true); setRetryKey((k) => k + 1); }}>
+              Coba lagi
+            </Button>
           </div>
         ) : (
-          <video
-            ref={videoRef}
-            src={src}
-            className="max-w-full max-h-full"
-            playsInline
-            preload="metadata"
-            onClick={togglePlay}
-            onError={() => setLoadError(true)}
-          />
+          <>
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+              </div>
+            )}
+            <video
+              key={retryKey}
+              ref={videoRef}
+              src={src}
+              className="max-w-full max-h-full"
+              playsInline
+              preload="auto"
+              onClick={togglePlay}
+              onError={() => { setLoadError(true); setLoading(false); }}
+            />
+          </>
         )}
       </div>
 

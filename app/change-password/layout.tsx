@@ -1,4 +1,4 @@
-import { getSessionUser } from "@/lib/auth/session";
+import { getSessionUserForPage } from "@/lib/auth/session-page";
 import { redirect } from "next/navigation";
 
 export default async function ChangePasswordLayout({
@@ -6,7 +6,7 @@ export default async function ChangePasswordLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getSessionUser();
+  const user = await getSessionUserForPage();
   if (!user) redirect("/login");
   if (!user.mustChangePassword) redirect("/dashboard");
   return children;

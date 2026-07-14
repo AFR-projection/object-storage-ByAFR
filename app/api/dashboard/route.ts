@@ -6,6 +6,7 @@ import { getEffectiveUserId, isMaster } from "@/lib/auth/permissions";
 import { NextResponse } from "next/server";
 import { SECURITY_HEADERS } from "@/lib/security";
 import { handleApiError } from "@/lib/api/response";
+import { getAdminSettings } from "@/lib/admin-settings";
 
 export async function GET() {
   try {
@@ -53,6 +54,7 @@ export async function GET() {
     }
 
     const usedBytes = user?.usedBytes ?? Number(fileStats.totalSize ?? 0);
+    const settings = await getAdminSettings();
 
     const data = {
       stats: {
@@ -61,6 +63,7 @@ export async function GET() {
         storageUsed: usedBytes,
         storageQuota: user?.quotaBytes ?? 0,
         storageRemaining: (user?.quotaBytes ?? 0) - usedBytes,
+        storageWarningThreshold: settings.storageWarningThreshold,
       },
       recentFiles,
       recentActivity,

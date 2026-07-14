@@ -31,7 +31,9 @@ function toastForEvent(event: RealtimeEvent): { title: string; description?: str
             ? "Other devices were signed out"
             : event.reason === "revoke_all"
               ? "All sessions were revoked"
-              : "A session was revoked",
+              : event.reason === "ip_change"
+                ? "Session revoked due to IP change"
+                : "A session was revoked",
         tone: "warning",
       };
     case "heartbeat":

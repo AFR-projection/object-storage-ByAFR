@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRealtimeEvents } from "@/hooks/use-realtime-events";
+import { notify } from "@/lib/system/notify-store";
 
 const STORAGE_KEY = "sidebar_collapsed";
 
@@ -58,6 +59,22 @@ export function ClientShell({
   const initialCollapsed = useRef(true);
 
   useRealtimeEvents(true);
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("new_login_notice") === "1") {
+        sessionStorage.removeItem("new_login_notice");
+        notify({
+          title: "New login detected",
+          description: "New login detected from a new device or location.",
+          tone: "warning",
+          duration: 6000,
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const collapsed = useSyncExternalStore(
     subscribeCollapsed,

@@ -138,11 +138,4 @@ export async function getIpLocation(ip: string): Promise<LocationInfo | null> {
   return queryIpApi(ip);
 }
 
-export function getClientIpFromRequest(request: Request): string {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    request.headers.get("x-real-ip") ??
-    request.headers.get("cf-connecting-ip") ??
-    "unknown"
-  );
-}
+export { getClientIp as getClientIpFromRequest } from "@/lib/auth/session";

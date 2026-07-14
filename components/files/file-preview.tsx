@@ -4,9 +4,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useMemo } from "react";
 import {
   Download, Share2, Info, Maximize2, Minimize2, X,
-  AlertCircle, FileText, Lock, Unlock, Loader2,
+  AlertCircle, FileText, Lock, Unlock, Loader2, Keyboard,
 } from "lucide-react";
-import { cn, formatBytes, formatDate, getMimeCategory, getFileExtension } from "@/lib/utils";
+import { cn, formatBytes, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { File as FileRecord } from "@/lib/db/schema";
@@ -18,33 +18,44 @@ import {
   isEncryptionMeta,
   type EncryptionMetaV1,
 } from "@/lib/crypto/client-encryption";
+import { detectPreviewKind, previewKindLabel } from "@/lib/preview/detect-preview-type";
 
-const ImageViewer = dynamic(() => import("@/components/media-viewers/image-viewer").then((m) => m.ImageViewer), { ssr: false });
-const VideoViewer = dynamic(() => import("@/components/media-viewers/video-viewer").then((m) => m.VideoViewer), { ssr: false });
-const AudioViewer = dynamic(() => import("@/components/media-viewers/audio-viewer").then((m) => m.AudioViewer), { ssr: false });
-const PdfViewer = dynamic(() => import("@/components/media-viewers/pdf-viewer").then((m) => m.PdfViewer), { ssr: false });
-const TextViewer = dynamic(() => import("@/components/media-viewers/text-viewer").then((m) => m.TextViewer), { ssr: false });
-const OfficeViewer = dynamic(() => import("@/components/media-viewers/office-viewer").then((m) => m.OfficeViewer), { ssr: false });
-const SvgViewer = dynamic(() => import("@/components/media-viewers/svg-viewer").then((m) => m.SvgViewer), { ssr: false });
-const ArchiveViewer = dynamic(() => import("@/components/media-viewers/archive-viewer").then((m) => m.ArchiveViewer), { ssr: false });
+const ImageViewer = dynamic(() => import("@/components/media-viewers/image-viewer").then((m) => m.ImageViewer), { ssr: false, loading: () => <PreviewSkeleton label="Image" /> });
+const VideoViewer = dynamic(() => import("@/components/media-viewers/video-viewer").then((m) => m.VideoViewer), { ssr: false, loading: () => <PreviewSkeleton label="Video" /> });
+const AudioViewer = dynamic(() => import("@/components/media-viewers/audio-viewer").then((m) => m.AudioViewer), { ssr: false, loading: () => <PreviewSkeleton label="Audio" /> });
+const PdfViewer = dynamic(() => import("@/components/media-viewers/pdf-viewer").then((m) => m.PdfViewer), { ssr: false, loading: () => <PreviewSkeleton label="PDF" /> });
+const TextViewer = dynamic(() => import("@/components/media-viewers/text-viewer").then((m) => m.TextViewer), { ssr: false, loading: () => <PreviewSkeleton label="Code" /> });
+const CsvViewer = dynamic(() => import("@/components/media-viewers/csv-viewer").then((m) => m.CsvViewer), { ssr: false, loading: () => <PreviewSkeleton label="Table" /> });
+const SpreadsheetViewer = dynamic(() => import("@/components/media-viewers/spreadsheet-viewer").then((m) => m.SpreadsheetViewer), { ssr: false, loading: () => <PreviewSkeleton label="Excel" /> });
+const DocxViewer = dynamic(() => import("@/components/media-viewers/docx-viewer").then((m) => m.DocxViewer), { ssr: false, loading: () => <PreviewSkeleton label="Word" /> });
+const PptxViewer = dynamic(() => import("@/components/media-viewers/pptx-viewer").then((m) => m.PptxViewer), { ssr: false, loading: () => <PreviewSkeleton label="PowerPoint" /> });
+const SvgViewer = dynamic(() => import("@/components/media-viewers/svg-viewer").then((m) => m.SvgViewer), { ssr: false, loading: () => <PreviewSkeleton label="SVG" /> });
+const ArchiveViewer = dynamic(() => import("@/components/media-viewers/archive-viewer").then((m) => m.ArchiveViewer), { ssr: false, loading: () => <PreviewSkeleton label="Archive" /> });
 
 interface FilePreviewProps {
   file: FileRecord;
   onClose: () => void;
 }
 
-const TEXT_MIMES = new Set(["text/plain", "text/markdown", "text/csv", "text/html", "text/css", "text/javascript", "application/json", "application/xml"]);
-const CODE_EXTENSIONS = new Set(["js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "rb", "go", "rs", "java", "kt", "swift", "c", "cpp", "h", "hpp", "cs", "php", "html", "htm", "css", "scss", "less", "sass", "json", "yaml", "yml", "toml", "xml", "svg", "sql", "sh", "bash", "zsh", "fish", "ps1", "bat", "vue", "svelte", "astro", "env", "gitignore", "dockerignore", "log", "ini", "cfg", "conf"]);
-const OFFICE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"]);
+function PreviewSkeleton({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-3">
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+      <p className="text-xs text-muted-foreground">Loading {label.toLowerCase()}...</p>
+    </div>
+  );
+}
 
 export function FilePreview({ file, onClose }: FilePreviewProps) {
-  const category = getMimeCategory(file.mimeType);
-  const ext = getFileExtension(file.name);
-  const [loading, setLoading] = useState(true);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewKind = useMemo(
+    () => detectPreviewKind(file.mimeType, file.name),
+    [file.mimeType, file.name]
+  );
+
   const [fullscreen, setFullscreen] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   const [passphrase, setPassphrase] = useState("");
   const [unlocking, setUnlocking] = useState(false);
@@ -52,20 +63,12 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
   const [decryptedUrl, setDecryptedUrl] = useState<string | null>(null);
 
   const isEncrypted = !!file.encrypted;
-  const isSvg = file.mimeType === "image/svg+xml" || ext === "svg";
-  const isText = TEXT_MIMES.has(file.mimeType) || CODE_EXTENSIONS.has(ext);
-  const isOffice = OFFICE_EXTENSIONS.has(ext);
-  const isArchive = category === "archive";
 
   const streamUrl = useMemo(() => {
     if (file.isNote) return null;
     if (isEncrypted) return decryptedUrl;
     return `/api/files/${file.id}/preview`;
   }, [file.id, file.isNote, isEncrypted, decryptedUrl]);
-
-  useEffect(() => {
-    setLoading(false);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -76,13 +79,16 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (fullscreen) setFullscreen(false);
+        if (showInfo) setShowInfo(false);
+        else if (showShare) setShowShare(false);
+        else if (fullscreen) setFullscreen(false);
         else onClose();
       }
+      if (e.key === "?" && e.shiftKey) setShowShortcuts((v) => !v);
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose, fullscreen]);
+  }, [onClose, fullscreen, showInfo, showShare]);
 
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
@@ -110,12 +116,12 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
   function renderContent() {
     if (isEncrypted && !decryptedUrl) {
       return (
-        <div className="flex flex-col items-center justify-center h-full text-center px-4">
+        <div className="flex flex-col items-center justify-center h-full text-center px-4 bg-card">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10">
             <Lock className="h-8 w-8 text-amber-500" />
           </div>
-          <p className="text-sm font-medium">Encrypted file</p>
-          <p className="mt-1 text-xs text-muted-foreground">Enter the passphrase to unlock and preview</p>
+          <p className="text-sm font-medium">File terenkripsi</p>
+          <p className="mt-1 text-xs text-muted-foreground">Masukkan passphrase untuk membuka preview</p>
           <form onSubmit={handleUnlock} className="mt-4 w-full max-w-xs space-y-2">
             <Input
               type="password"
@@ -127,96 +133,71 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
             {unlockError && <p className="text-xs text-danger">{unlockError}</p>}
             <Button type="submit" className="w-full" disabled={unlocking || !passphrase}>
               {unlocking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlock className="mr-2 h-4 w-4" />}
-              Unlock
+              Buka
             </Button>
           </form>
         </div>
       );
     }
 
-    if (loading) {
+    if (!streamUrl && previewKind !== "archive") {
       return (
-        <div className="flex items-center justify-center h-full">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-            <p className="text-sm text-muted-foreground">Loading preview...</p>
-          </div>
+        <div className="flex flex-col items-center justify-center h-full text-muted-foreground bg-card">
+          <FileText className="h-10 w-10 mb-3 opacity-40" />
+          <p className="text-sm">Preview tidak tersedia</p>
         </div>
       );
     }
 
-    if (previewError) {
-      return (
-        <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10">
-            <AlertCircle className="h-8 w-8 text-amber-500" />
-          </div>
-          <p className="text-sm font-medium">{previewError}</p>
-          <Button className="mt-4" variant="secondary" onClick={() => window.open(`/api/download/${file.id}`)}>
-            <Download className="h-4 w-4 mr-1.5" /> Download instead
-          </Button>
-        </div>
-      );
-    }
-
-    if (category === "pdf" && streamUrl) {
-      return <PdfViewer fileId={file.id} previewUrl={streamUrl} />;
-    }
-
-    if (category === "image" && !isSvg && streamUrl) {
-      return <ImageViewer src={streamUrl} fileName={file.name} mimeType={file.mimeType} />;
-    }
-
-    if (isSvg && streamUrl) {
-      return <SvgViewer src={streamUrl} fileName={file.name} />;
-    }
-
-    if (category === "video" && streamUrl) {
-      return <VideoViewer src={streamUrl} fileName={file.name} />;
-    }
-
-    if (category === "audio" && streamUrl) {
-      return <AudioViewer src={streamUrl} fileName={file.name} />;
-    }
-
-    if (isText && streamUrl) {
-      return <TextViewer src={streamUrl} fileName={file.name} mimeType={file.mimeType} />;
-    }
-
-    if (isOffice && streamUrl) {
-      return <OfficeViewer src={streamUrl} fileName={file.name} mimeType={file.mimeType} fileId={file.id} />;
-    }
-
-    if (isArchive && !isEncrypted) {
-      return <ArchiveViewer fileName={file.name} mimeType={file.mimeType} sizeBytes={file.sizeBytes} fileId={file.id} />;
-    }
-
-    if (streamUrl) {
-      const isStreamable = category === "other" || category === "document" || category === "spreadsheet" || category === "presentation";
-      if (isStreamable) {
-        return (
-          <div className="flex flex-col h-full">
-            <div className="flex-1 min-h-0 bg-white">
-              <iframe src={streamUrl} className="w-full h-full border-0" title={file.name} />
-            </div>
-          </div>
-        );
-      }
+    switch (previewKind) {
+      case "pdf":
+        return streamUrl ? <PdfViewer fileId={file.id} previewUrl={streamUrl} /> : null;
+      case "image":
+        return streamUrl ? <ImageViewer src={streamUrl} fileName={file.name} mimeType={file.mimeType} /> : null;
+      case "svg":
+        return streamUrl ? <SvgViewer src={streamUrl} fileName={file.name} /> : null;
+      case "video":
+        return streamUrl ? <VideoViewer src={streamUrl} fileName={file.name} /> : null;
+      case "audio":
+        return streamUrl ? <AudioViewer src={streamUrl} fileName={file.name} /> : null;
+      case "text":
+        return streamUrl ? <TextViewer src={streamUrl} fileName={file.name} mimeType={file.mimeType} /> : null;
+      case "csv":
+        return streamUrl ? <CsvViewer src={streamUrl} fileName={file.name} /> : null;
+      case "spreadsheet":
+        return streamUrl ? (
+          <SpreadsheetViewer src={streamUrl} fileName={file.name} fileId={file.id} />
+        ) : null;
+      case "document":
+        return streamUrl ? (
+          <DocxViewer src={streamUrl} fileName={file.name} fileId={file.id} />
+        ) : null;
+      case "presentation":
+        return streamUrl ? (
+          <PptxViewer src={streamUrl} fileName={file.name} fileId={file.id} />
+        ) : null;
+      case "archive":
+        if (!isEncrypted) {
+          return <ArchiveViewer fileName={file.name} mimeType={file.mimeType} sizeBytes={file.sizeBytes} fileId={file.id} />;
+        }
+        break;
     }
 
     return (
-      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground bg-card">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/5">
           <FileText className="h-8 w-8 text-accent/40" />
         </div>
-        <p className="text-sm font-medium">Preview not available</p>
-        <p className="text-xs text-muted-foreground/60 mt-1">This file type cannot be previewed inline</p>
+        <p className="text-sm font-medium">Preview tidak tersedia</p>
+        <p className="text-xs text-muted-foreground/60 mt-1">Tipe file ini belum didukung untuk preview inline</p>
         <Button className="mt-4" onClick={() => window.open(`/api/download/${file.id}`)}>
           <Download className="h-4 w-4 mr-1.5" /> Download
         </Button>
       </div>
     );
   }
+
+  const kindLabel = previewKindLabel(previewKind);
 
   return (
     <AnimatePresence>
@@ -225,62 +206,97 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className={cn(
-          "fixed inset-0 z-50 flex bg-black/50 backdrop-blur-sm",
-          fullscreen ? "p-0" : "p-2 sm:p-4 lg:p-6"
+          "fixed inset-0 z-50 flex bg-black/60 backdrop-blur-md",
+          fullscreen ? "p-0" : "p-2 sm:p-4 lg:p-8"
         )}
         onClick={onClose}
       >
         <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
+          initial={{ scale: 0.97, opacity: 0, y: 8 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.97, opacity: 0, y: 8 }}
+          transition={{ type: "spring", stiffness: 380, damping: 32 }}
           className={cn(
-            "relative flex flex-col bg-card border border-border/50 shadow-2xl overflow-hidden",
-            "rounded-2xl w-full h-full",
-            fullscreen && "rounded-none"
+            "relative flex flex-col bg-card border border-border/40 shadow-2xl overflow-hidden mx-auto",
+            "rounded-2xl w-full max-w-6xl h-full",
+            fullscreen && "max-w-none rounded-none"
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-card/80 backdrop-blur-sm shrink-0">
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold truncate flex items-center gap-2">
-                {isEncrypted && <Lock className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
-                {file.name}
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {formatBytes(file.sizeBytes)} &middot; {getMimeCategory(file.mimeType).toUpperCase()} &middot; {formatDate(file.createdAt)}
-              </p>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40 bg-card/95 backdrop-blur-sm shrink-0">
+            <div className="flex-1 min-w-0 flex items-center gap-2.5">
+              <span className="shrink-0 rounded-md bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                {kindLabel}
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold truncate flex items-center gap-1.5">
+                  {isEncrypted && <Lock className="h-3 w-3 text-amber-500 shrink-0" />}
+                  {file.name}
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                  {formatBytes(file.sizeBytes)} · {formatDate(file.createdAt)}
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-1 ml-4">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(`/api/download/${file.id}`)}>
+            <div className="flex items-center gap-0.5 ml-3 shrink-0">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowShortcuts((v) => !v)} title="Shortcuts">
+                <Keyboard className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(`/api/download/${file.id}`)} title="Download">
                 <Download className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowShare(true)}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowShare(true)} title="Share">
                 <Share2 className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowInfo(!showInfo)}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowInfo(!showInfo)} title="Info">
                 <Info className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setFullscreen(!fullscreen)}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setFullscreen(!fullscreen)} title="Fullscreen">
                 {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} title="Close (Esc)">
                 <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 bg-[repeating-conic-gradient(#262626_0%_25%,#1a1a1a_0%_50%)] bg-[length:16px_16px]">
+          {/* Content */}
+          <div className={cn(
+            "flex-1 min-h-0",
+            previewKind === "video" || previewKind === "image" || previewKind === "svg" || previewKind === "presentation"
+              ? "bg-black"
+              : "bg-[repeating-conic-gradient(#262626_0%_25%,#1a1a1a_0%_50%)] bg-[length:16px_16px]"
+          )}>
             {renderContent()}
           </div>
 
+          {/* Shortcuts hint */}
+          <AnimatePresence>
+            {showShortcuts && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                className="absolute bottom-4 left-4 rounded-xl border border-border/40 bg-card/95 backdrop-blur-sm shadow-lg p-3 text-[11px] space-y-1 z-20"
+              >
+                <p className="font-semibold text-xs mb-2">Keyboard</p>
+                <p><kbd className="px-1 py-0.5 rounded bg-muted text-[10px]">Esc</kbd> Tutup</p>
+                <p><kbd className="px-1 py-0.5 rounded bg-muted text-[10px]">Space</kbd> Play/Pause (media)</p>
+                <p><kbd className="px-1 py-0.5 rounded bg-muted text-[10px]">← →</kbd> Seek / halaman PDF</p>
+                <p><kbd className="px-1 py-0.5 rounded bg-muted text-[10px]">+ -</kbd> Zoom</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {showInfo && (
-            <div className="absolute top-14 right-4 w-80 max-h-[70vh] overflow-y-auto bg-card border border-border/50 rounded-xl shadow-xl p-4 z-10 space-y-4">
+            <div className="absolute top-12 right-4 w-80 max-h-[70vh] overflow-y-auto bg-card border border-border/50 rounded-xl shadow-xl p-4 z-10 space-y-4">
               <div className="space-y-2">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">File Info</h4>
                 <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Name</span><span className="font-mono truncate ml-2 max-w-[160px]">{file.name}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Type</span><span className="font-mono text-xs">{file.mimeType}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Preview</span><span className="text-xs">{kindLabel}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Size</span><span>{formatBytes(file.sizeBytes)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Created</span><span>{formatDate(file.createdAt)}</span></div>
                   {isEncrypted && (
@@ -288,9 +304,7 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
                   )}
                 </div>
               </div>
-              {!file.isNote && (
-                <FileVersionsPanel fileId={file.id} />
-              )}
+              {!file.isNote && <FileVersionsPanel fileId={file.id} />}
             </div>
           )}
 

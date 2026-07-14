@@ -17,11 +17,12 @@ import {
   copyR2Object,
   deleteR2Object,
 } from "@/lib/storage/r2";
-import { validateCsrf } from "@/lib/security";
+import { validateCsrf, checkRateLimit } from "@/lib/security";
 import { cacheGet, cacheSet, cacheDelPattern } from "@/lib/cache/redis";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { recalculateUsedBytes } from "@/lib/db";
 import { dispatchWebhookEvent } from "@/lib/webhooks/dispatch";
+import { getAdminSettings } from "@/lib/admin-settings";
 
 const listSchema = z.object({
   folderId: z.string().uuid().nullable().optional(),
@@ -65,7 +66,9 @@ export async function GET(request: NextRequest) {
 
     const cacheKey = `files:${userId}:${JSON.stringify(params)}`;
     const cached = await cacheGet<{ files: unknown[]; nextCursor: string | null }>(cacheKey);
-    if (cached) return apiSuccess(cached);
+    if (cached && Array.isArray(cached.files) && cached.files.length > 0) {
+      return apiSuccess(cached);
+    }
 
     const conditions = [eq(files.userId, userId)];
 
@@ -120,6 +123,10 @@ export async function POST(request: NextRequest) {
 
     const sessionUser = await requireAuth();
     const userId = getEffectiveUserId(sessionUser);
+    const settings = await getAdminSettings();
+    const rl = await checkRateLimit(`api:${userId}`, settings.rateLimitPerMinute, 60_000);
+    if (!rl.allowed) return apiError("Rate limit exceeded", 429);
+
     const body = createNoteSchema.parse(await request.json());
     const ip = getClientIp(request);
 

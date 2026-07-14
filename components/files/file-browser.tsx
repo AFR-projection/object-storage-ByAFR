@@ -5,7 +5,7 @@ import { useDropzone } from "react-dropzone";
 import {
   Upload, FolderPlus, FilePlus, Grid3X3, List, Search, Loader2, Trash2, AlertCircle, FolderUp,
   Image, Film, Music, FileText, FileArchive, Star, X, CheckSquare, Square,
-  Download, File, Lock, Users,
+  Download, File, Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { File as FileRecord, Folder as FolderRecord } from "@/lib/db/schema";
 import dynamic from "next/dynamic";
 import { DndContext, DragEndEvent } from "@dnd-kit/core";
-import { DroppableFolder } from "@/components/folders/droppable-folder";
+import { FolderCard } from "@/components/folders/folder-card";
 import { UploadQueue, traverseDirectory } from "@/lib/upload-queue";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -91,12 +91,62 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   const [encryptPassphrase, setEncryptPassphrase] = useState("");
   const [inviteFolder, setInviteFolder] = useState<FolderRecord | null>(null);
 
-  // Infinite scroll
-  const [allFiles, setAllFiles] = useState<FileRecord[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // Infinite scroll — extra pages loaded via "Load more"
+  const [loadedMore, setLoadedMore] = useState<FileRecord[]>([]);
+  /** undefined = use first page cursor; null/string = after load-more */
+  const [moreCursor, setMoreCursor] = useState<string | null | undefined>(undefined);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // ── Queue ──
+  const listScope = `${folderId ?? "root"}:${trash}:${favorites}:${search}`;
+
+  // ── File fetching ──
+  const filesQuery = useQuery({
+    queryKey: ["files", folderId, trash, favorites, search],
+    queryFn: async () => {
+      if (search) {
+        const params = new URLSearchParams({ q: search, limit: "100" });
+        if (folderId) params.set("folderId", folderId);
+        const res = await apiFetch<{ files: FileRecord[]; nextCursor: string | null }>(
+          `/api/search?${params}`
+        );
+        if (!res.success) throw new Error(res.error ?? "Failed to search files");
+        return res.data ?? { files: [], nextCursor: null };
+      }
+      const params = new URLSearchParams({ limit: "100" });
+      if (folderId) params.set("folderId", folderId);
+      if (trash) params.set("trash", "true");
+      if (favorites) params.set("favorites", "true");
+      const res = await apiFetch<{ files: FileRecord[]; nextCursor: string | null }>(
+        `/api/files?${params}`
+      );
+      if (!res.success) throw new Error(res.error ?? "Failed to load files");
+      return res.data ?? { files: [], nextCursor: null };
+    },
+    staleTime: 5_000,
+    refetchOnMount: "always",
+    retry: 2,
+  });
+
+  // Reset pagination when folder / filters change
+  useEffect(() => {
+    setLoadedMore([]);
+    setMoreCursor(undefined);
+  }, [listScope]);
+
+  const baseFiles = filesQuery.data?.files ?? [];
+  const allFiles = useMemo(() => {
+    if (loadedMore.length === 0) return baseFiles;
+    const seen = new Set(baseFiles.map((f) => f.id));
+    const merged = [...baseFiles];
+    for (const f of loadedMore) {
+      if (!seen.has(f.id)) merged.push(f);
+    }
+    return merged;
+  }, [baseFiles, loadedMore]);
+
+  const nextCursor =
+    moreCursor !== undefined ? moreCursor : (filesQuery.data?.nextCursor ?? null);
+
   const getQueue = useCallback((): UploadQueue => {
     if (!uploadQueue) {
       const q = new UploadQueue();
@@ -120,31 +170,6 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     setError(msg);
     setTimeout(() => setError(""), 4000);
   }, []);
-
-  // ── File fetching ──
-  const filesQuery = useQuery({
-    queryKey: ["files", folderId, trash, favorites, search],
-    queryFn: async () => {
-      if (search) {
-        const params = new URLSearchParams({ q: search, limit: "100" });
-        if (folderId) params.set("folderId", folderId);
-        const res = await apiFetch<{ files: FileRecord[]; nextCursor: string | null }>(`/api/search?${params}`);
-        const data = res.data ?? { files: [], nextCursor: null };
-        setAllFiles(data.files);
-        setNextCursor(data.nextCursor);
-        return data;
-      }
-      const params = new URLSearchParams({ limit: "100" });
-      if (folderId) params.set("folderId", folderId);
-      if (trash) params.set("trash", "true");
-      if (favorites) params.set("favorites", "true");
-      const res = await apiFetch<{ files: FileRecord[]; nextCursor: string | null }>(`/api/files?${params}`);
-      const data = res.data ?? { files: [], nextCursor: null };
-      setAllFiles(data.files);
-      setNextCursor(data.nextCursor);
-      return data;
-    },
-  });
 
   // ── Folder fetching ──
   const foldersQuery = useQuery({
@@ -170,12 +195,14 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
       if (folderId) params.set("folderId", folderId);
       if (trash) params.set("trash", "true");
       if (favorites) params.set("favorites", "true");
-      const res = await apiFetch<{ files: FileRecord[]; nextCursor: string | null }>(`/api/files?${params}`);
-      const data = res.data;
-      if (data?.files) {
-        setAllFiles((prev) => [...prev, ...data.files]);
-        setNextCursor(data.nextCursor);
+      const res = await apiFetch<{ files: FileRecord[]; nextCursor: string | null }>(
+        `/api/files?${params}`
+      );
+      if (!res.success || !res.data) {
+        throw new Error(res.error ?? "Failed to load more files");
       }
+      setLoadedMore((prev) => [...prev, ...res.data!.files]);
+      setMoreCursor(res.data.nextCursor);
     } catch {
       showError("Failed to load more files");
     } finally {
@@ -540,13 +567,11 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   // ── Batch actions ──
   async function batchFavorite() {
     const ids = Array.from(selectedIds);
-    const results = await Promise.all(
-      ids.map((id) =>
-        apiFetch("/api/files", { method: "PATCH", body: JSON.stringify({ id, action: "favorite" }) })
-      )
-    );
-    const failed = results.filter((r) => !r.success);
-    if (failed.length > 0) showError(`${failed.length} failed`);
+    const res = await apiFetch("/api/files/batch", {
+      method: "PATCH",
+      body: JSON.stringify({ ids, action: "favorite" }),
+    });
+    if (!res.success) showError(res.error ?? "Favorite failed");
     setSelectedIds(new Set());
     queryClient.invalidateQueries({ queryKey: ["files"] });
   }
@@ -554,21 +579,50 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   async function batchDelete() {
     if (!confirm(`Delete ${selectedIds.size} file${selectedIds.size > 1 ? "s" : ""}?`)) return;
     const ids = Array.from(selectedIds);
-    const results = await Promise.all(
-      ids.map((id) =>
-        apiFetch("/api/files", { method: "PATCH", body: JSON.stringify({ id, action: "delete" }) })
-      )
-    );
-    const failed = results.filter((r) => !r.success);
-    if (failed.length > 0) showError(`${failed.length} failed`);
+    const res = await apiFetch("/api/files/batch", {
+      method: "PATCH",
+      body: JSON.stringify({ ids, action: "delete" }),
+    });
+    if (!res.success) showError(res.error ?? "Delete failed");
     setSelectedIds(new Set());
     queryClient.invalidateQueries({ queryKey: ["files"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   }
 
-  function batchDownload() {
-    for (const id of selectedIds) {
-      window.open(`/api/download/${id}`, "_blank");
+  async function batchDownload() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (ids.length === 1) {
+      window.open(`/api/download/${ids[0]}`, "_blank");
+      return;
+    }
+
+    try {
+      const { getCsrfToken } = await import("@/lib/api/client");
+      const res = await fetch("/api/download/zip", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": await getCsrfToken(),
+        },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        showError(json?.error ?? "ZIP download failed");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "download.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      showError("ZIP download failed");
     }
   }
 
@@ -588,7 +642,13 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     else { setSelectedFile(file); }
   }, []);
 
-  const isLoading = filesQuery.isLoading;
+  const isLoading = filesQuery.isPending && !filesQuery.data;
+
+  useEffect(() => {
+    if (filesQuery.isError) {
+      showError(filesQuery.error instanceof Error ? filesQuery.error.message : "Failed to load files");
+    }
+  }, [filesQuery.isError, filesQuery.error, showError]);
 
   return (
     <DndContext onDragEnd={handleDragEnd}>
@@ -811,44 +871,16 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
 
       {/* ── Folders ── */}
       {!search && folders.length > 0 && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+        <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {folders.map((folder) => (
-            <div key={folder.id} className="relative group">
-              <DroppableFolder folder={folder} />
-              {trash ? (
-                <button
-                  className="absolute top-1 right-1 flex sm:hidden sm:group-hover:flex h-9 w-9 sm:h-6 sm:w-6 items-center justify-center rounded bg-red-500/20 text-red-500 hover:bg-red-500/30"
-                  onClick={(e) => { e.preventDefault(); folderAction("delete", folder); }}
-                  title="Delete permanently"
-                >
-                  <Trash2 className="h-4 w-4 sm:h-3 sm:w-3" />
-                </button>
-              ) : (
-                <div className="flex sm:absolute sm:top-1 sm:right-1 sm:hidden sm:group-hover:flex items-center gap-1">
-                  <button
-                    className="flex h-9 w-9 sm:h-6 sm:w-6 items-center justify-center rounded bg-surface-hover hover:bg-accent/20 text-muted-foreground hover:text-accent transition-colors"
-                    onClick={(e) => { e.preventDefault(); setInviteFolder(folder); }}
-                    title="Share folder"
-                  >
-                    <Users className="h-4 w-4 sm:h-3 sm:w-3" />
-                  </button>
-                  <button
-                    className="flex h-9 w-9 sm:h-6 sm:w-6 items-center justify-center rounded bg-surface-hover hover:bg-danger/20 text-muted-foreground hover:text-danger transition-colors"
-                    onClick={(e) => { e.preventDefault(); folderAction("delete", folder); }}
-                    title="Move to trash"
-                  >
-                    <Trash2 className="h-4 w-4 sm:h-3 sm:w-3" />
-                  </button>
-                  <button
-                    className="flex h-9 w-9 sm:h-6 sm:w-6 items-center justify-center rounded bg-surface-hover hover:bg-border text-muted-foreground hover:text-foreground transition-colors"
-                    onClick={(e) => { e.preventDefault(); folderAction("rename", folder); }}
-                    title="Rename"
-                  >
-                    <svg className="h-4 w-4 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                  </button>
-                </div>
-              )}
-            </div>
+            <FolderCard
+              key={folder.id}
+              folder={folder}
+              trash={trash}
+              onRename={(f) => folderAction("rename", f)}
+              onDelete={(f) => folderAction("delete", f)}
+              onShare={trash ? undefined : (f) => setInviteFolder(f)}
+            />
           ))}
         </div>
       )}
@@ -890,7 +922,9 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     </div>
 
     {showUploadPanel && uploadQueue && (
-      <UploadPanel queue={uploadQueue} onDismiss={() => setShowUploadPanel(false)} />
+      <AnimatePresence mode="wait">
+        <UploadPanel key="upload-panel" queue={uploadQueue} onDismiss={() => setShowUploadPanel(false)} />
+      </AnimatePresence>
     )}
     </DndContext>
   );

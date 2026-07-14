@@ -11,10 +11,12 @@ import {
   resolveFolderAccess,
 } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
-import { validateCsrf, SECURITY_HEADERS } from "@/lib/security";
+import { validateCsrf, SECURITY_HEADERS, checkRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { escapeRegex } from "@/lib/utils";
 import { cacheDelPattern } from "@/lib/cache/redis";
+import { getAdminSettings } from "@/lib/admin-settings";
+import { deleteR2Objects } from "@/lib/storage/r2";
 
 async function buildPath(parentId: string | null, name: string, userId: string) {
   if (!parentId) {
@@ -70,6 +72,10 @@ export async function POST(request: NextRequest) {
 
     const sessionUser = await requireAuth();
     const userId = getEffectiveUserId(sessionUser);
+    const settings = await getAdminSettings();
+    const rl = await checkRateLimit(`api:${userId}`, settings.rateLimitPerMinute, 60_000);
+    if (!rl.allowed) return apiError("Rate limit exceeded", 429);
+
     const body = createSchema.parse(await request.json());
     const ip = getClientIp(request);
 
@@ -233,6 +239,24 @@ export async function DELETE(request: NextRequest) {
     const subPathPattern = `${escapeRegex(folder.materializedPath)}%`;
 
     if (permanent) {
+      const subtreeFiles = await db
+        .select({ r2Key: files.r2Key, thumbnailKey: files.thumbnailKey })
+        .from(files)
+        .where(
+          sql`${files.folderId} IN (
+            SELECT id FROM ${folders}
+            WHERE user_id = ${folder.userId}
+              AND materialized_path ILIKE ${subPathPattern}
+          )`
+        );
+
+      const keys: string[] = [];
+      for (const f of subtreeFiles) {
+        if (f.r2Key) keys.push(f.r2Key);
+        if (f.thumbnailKey) keys.push(f.thumbnailKey);
+      }
+      await deleteR2Objects(keys);
+
       await db.execute(
         sql`
           DELETE FROM ${files}
@@ -250,6 +274,7 @@ export async function DELETE(request: NextRequest) {
             AND materialized_path ILIKE ${subPathPattern}
         `
       );
+      await recalculateUsedBytes(folder.userId);
     } else {
       const now = new Date();
       await db.execute(

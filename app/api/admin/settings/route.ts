@@ -1,116 +1,68 @@
-import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth/session";
+import { NextRequest } from "next/server";
+import { count } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { eq, count } from "drizzle-orm";
+import { requireMaster } from "@/lib/auth/session";
+import { validateCsrf } from "@/lib/security";
+import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import {
+  getAdminSettings,
+  updateAdminSettings,
+  type AdminSettings,
+} from "@/lib/admin-settings";
 
-export interface AdminSettings {
-  maintenanceMode: boolean;
-  maintenanceMessage: string;
-  defaultQuotaGB: number;
-  maxUploadSizeMB: number;
-  allowedMimeTypes: string[];
-  blockedExtensions: string[];
-  sessionDurationHours: number;
-  maxSessionsPerUser: number;
-  registrationEnabled: boolean;
-  maxFileLifetimeDays: number;
-  storageWarningThreshold: number;
-  autoDeleteTrashDays: number;
-  rateLimitPerMinute: number;
-  smtpConfigured: boolean;
-  backupEnabled: boolean;
-  backupSchedule: string;
-  logRetentionDays: number;
-}
+export type { AdminSettings };
 
-const DEFAULT_SETTINGS: AdminSettings = {
-  maintenanceMode: false,
-  maintenanceMessage: "System is under maintenance. Please check back later.",
-  defaultQuotaGB: 10,
-  maxUploadSizeMB: 500,
-  allowedMimeTypes: ["*/*"],
-  blockedExtensions: [".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".vbs", ".ps1", ".sh"],
-  sessionDurationHours: 168,
-  maxSessionsPerUser: 10,
-  registrationEnabled: true,
-  maxFileLifetimeDays: 0,
-  storageWarningThreshold: 85,
-  autoDeleteTrashDays: 30,
-  rateLimitPerMinute: 60,
-  smtpConfigured: false,
-  backupEnabled: false,
-  backupSchedule: "daily",
-  logRetentionDays: 90,
-};
-
-let cachedSettings: AdminSettings | null = null;
-
-function getStore() {
-  if (typeof globalThis !== "undefined") {
-    return (globalThis as Record<string, unknown>).__adminSettings as AdminSettings | undefined;
-  }
-}
-
-function setStore(s: AdminSettings) {
-  if (typeof globalThis !== "undefined") {
-    (globalThis as Record<string, unknown>).__adminSettings = s;
-  }
-}
-
-function loadSettings(): AdminSettings {
-  const stored = getStore();
-  if (stored) return stored;
-  setStore(DEFAULT_SETTINGS);
-  return DEFAULT_SETTINGS;
-}
+const patchSchema = z
+  .object({
+    maintenanceMode: z.boolean().optional(),
+    maintenanceMessage: z.string().max(500).optional(),
+    defaultQuotaGB: z.number().optional(),
+    maxUploadSizeMB: z.number().optional(),
+    allowedMimeTypes: z.array(z.string()).optional(),
+    blockedExtensions: z.array(z.string()).optional(),
+    sessionDurationHours: z.number().optional(),
+    maxSessionsPerUser: z.number().optional(),
+    registrationEnabled: z.boolean().optional(),
+    maxFileLifetimeDays: z.number().optional(),
+    storageWarningThreshold: z.number().optional(),
+    autoDeleteTrashDays: z.number().optional(),
+    rateLimitPerMinute: z.number().optional(),
+    logRetentionDays: z.number().optional(),
+  })
+  .strip();
 
 export async function GET() {
-  const user = await getSessionUser();
-  if (!user || user.role !== "master") {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
-  }
+  try {
+    await requireMaster();
+    const settings = await getAdminSettings(true);
+    const [userCount] = await db.select({ count: count() }).from(users);
 
-  const settings = loadSettings();
-  const [userCount] = await db.select({ count: count() }).from(users);
-
-  return NextResponse.json({
-    success: true,
-    data: {
+    return apiSuccess({
       ...settings,
       _meta: {
         totalUsers: userCount.count,
         version: "1.0.0",
+        persistence: "database",
+        cacheTtlSeconds: 30,
       },
-    },
-  });
+    });
+  } catch (error) {
+    return handleApiError(error);
+  }
 }
 
-export async function PUT(request: Request) {
-  const user = await getSessionUser();
-  if (!user || user.role !== "master") {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+export async function PUT(request: NextRequest) {
+  try {
+    if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
+    await requireMaster();
+
+    const body = patchSchema.parse(await request.json());
+    const updated = await updateAdminSettings(body);
+
+    return apiSuccess(updated);
+  } catch (error) {
+    return handleApiError(error);
   }
-
-  const body = await request.json();
-  const current = loadSettings();
-
-  const updated: AdminSettings = {
-    ...DEFAULT_SETTINGS,
-    ...current,
-    ...body,
-    maintenanceMode: body.maintenanceMode ?? current.maintenanceMode ?? false,
-    maintenanceMessage: body.maintenanceMessage ?? current.maintenanceMessage ?? "",
-    defaultQuotaGB: Math.max(1, Math.min(10000, Number(body.defaultQuotaGB) || current.defaultQuotaGB)),
-    maxUploadSizeMB: Math.max(1, Math.min(5120, Number(body.maxUploadSizeMB) || current.maxUploadSizeMB)),
-    sessionDurationHours: Math.max(1, Math.min(8760, Number(body.sessionDurationHours) || current.sessionDurationHours)),
-    maxSessionsPerUser: Math.max(1, Math.min(100, Number(body.maxSessionsPerUser) || current.maxSessionsPerUser)),
-    logRetentionDays: Math.max(7, Math.min(730, Number(body.logRetentionDays) || current.logRetentionDays)),
-    autoDeleteTrashDays: Math.max(0, Math.min(365, Number(body.autoDeleteTrashDays) || current.autoDeleteTrashDays)),
-    rateLimitPerMinute: Math.max(10, Math.min(1000, Number(body.rateLimitPerMinute) || current.rateLimitPerMinute)),
-  };
-
-  setStore(updated);
-
-  return NextResponse.json({ success: true, data: updated });
 }

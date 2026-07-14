@@ -1,9 +1,59 @@
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { getAccessibleFile } from "@/lib/auth/permissions";
-import { downloadFromR2Stream, objectExists, getPresignedDownloadUrl } from "@/lib/storage/r2";
+import {
+  downloadFromR2Stream,
+  objectExists,
+  getPresignedDownloadUrl,
+  headObject,
+} from "@/lib/storage/r2";
 import { recordBandwidth, BandwidthQuotaError } from "@/lib/billing/bandwidth";
 import { apiSuccess, apiError } from "@/lib/api/response";
+
+function parseRangeHeader(
+  rangeHeader: string,
+  totalSize: number
+): { start: number; end: number; byteRange: string } | null {
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+  if (!match) return null;
+
+  let start = match[1] ? parseInt(match[1], 10) : NaN;
+  let end = match[2] ? parseInt(match[2], 10) : NaN;
+
+  if (Number.isNaN(start) && Number.isNaN(end)) return null;
+
+  if (Number.isNaN(start)) {
+    // suffix range: bytes=-500
+    const suffixLength = end;
+    if (Number.isNaN(suffixLength) || suffixLength <= 0) return null;
+    start = Math.max(0, totalSize - suffixLength);
+    end = totalSize - 1;
+  } else if (Number.isNaN(end)) {
+    end = totalSize - 1;
+  }
+
+  if (start < 0 || end < start || start >= totalSize) return null;
+  end = Math.min(end, totalSize - 1);
+
+  return { start, end, byteRange: `bytes=${start}-${end}` };
+}
+
+function toReadableStream(body: unknown): ReadableStream {
+  if (body instanceof ReadableStream) return body;
+  if (body && typeof body === "object" && "pipe" in body && typeof (body as { pipe: unknown }).pipe === "function") {
+    return new ReadableStream({
+      start(controller) {
+        const nodeStream = body as NodeJS.ReadableStream & {
+          on: (event: string, cb: (...args: unknown[]) => void) => void;
+        };
+        nodeStream.on("data", (chunk: Uint8Array) => controller.enqueue(chunk));
+        nodeStream.on("end", () => controller.close());
+        nodeStream.on("error", (err: Error) => controller.error(err));
+      },
+    });
+  }
+  return body as ReadableStream;
+}
 
 export async function GET(
   request: NextRequest,
@@ -42,8 +92,17 @@ export async function GET(
       return apiSuccess({ url });
     }
 
+    const meta = await headObject(file.r2Key);
+    const totalSize = meta.contentLength || file.sizeBytes;
+    const rangeHeader = request.headers.get("range");
+    const parsedRange = rangeHeader ? parseRangeHeader(rangeHeader, totalSize) : null;
+
+    const bytesToBill = parsedRange
+      ? parsedRange.end - parsedRange.start + 1
+      : totalSize;
+
     try {
-      await recordBandwidth(file.userId, file.sizeBytes);
+      await recordBandwidth(file.userId, bytesToBill);
     } catch (err) {
       if (err instanceof BandwidthQuotaError) {
         return apiError("BANDWIDTH_QUOTA_EXCEEDED", 429);
@@ -51,39 +110,37 @@ export async function GET(
       throw err;
     }
 
-    const r2 = await downloadFromR2Stream(file.r2Key);
+    const r2 = await downloadFromR2Stream(
+      file.r2Key,
+      parsedRange?.byteRange
+    );
 
     if (!r2.body) {
       return apiError("File kosong", 404);
     }
 
-    let stream: ReadableStream;
-    if (r2.body instanceof ReadableStream) {
-      stream = r2.body;
-    } else if ("pipe" in r2.body && typeof r2.body.pipe === "function") {
-      stream = new ReadableStream({
-        start(controller) {
-          const nodeStream = r2.body as NodeJS.ReadableStream & { on: Function; pipe: Function };
-          nodeStream.on("data", (chunk: Uint8Array) => controller.enqueue(chunk));
-          nodeStream.on("end", () => controller.close());
-          nodeStream.on("error", (err: Error) => controller.error(err));
-        },
-      });
-    } else {
-      stream = r2.body as unknown as ReadableStream;
-    }
+    const stream = toReadableStream(r2.body);
+    const isPartial = parsedRange !== null && r2.statusCode === 206;
 
     const headers = new Headers();
-    headers.set("Content-Type", file.mimeType);
-    headers.set("Content-Length", String(r2.contentLength ?? 0));
+    headers.set("Content-Type", file.mimeType || meta.contentType || "application/octet-stream");
     headers.set("Cache-Control", "private, max-age=300");
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Accept-Ranges", "bytes");
+    headers.set("Content-Disposition", `inline; filename="${encodeURIComponent(file.name)}"`);
 
-    return new Response(stream, {
-      status: 200,
-      headers,
-    });
+    if (isPartial && parsedRange) {
+      const chunkSize = parsedRange.end - parsedRange.start + 1;
+      headers.set("Content-Length", String(chunkSize));
+      headers.set(
+        "Content-Range",
+        r2.contentRange ?? `bytes ${parsedRange.start}-${parsedRange.end}/${totalSize}`
+      );
+      return new Response(stream, { status: 206, headers });
+    }
+
+    headers.set("Content-Length", String(r2.contentLength ?? totalSize));
+    return new Response(stream, { status: 200, headers });
   } catch (error) {
     console.error("[PREVIEW ERROR]", error);
     return apiError("Gagal memuat preview", 500);

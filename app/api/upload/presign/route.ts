@@ -13,6 +13,7 @@ import {
 } from "@/lib/storage/r2";
 import { validateCsrf, checkRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { getAdminSettings, isUploadAllowed } from "@/lib/admin-settings";
 
 const encryptionMetaSchema = z.object({
   salt: z.string().min(1),
@@ -38,8 +39,13 @@ export async function POST(request: NextRequest) {
     const sessionUser = await requireAuthOrApiKey(request, ["upload"]);
     const userId = getEffectiveUserId(sessionUser);
     const ip = getClientIp(request);
+    const settings = await getAdminSettings();
 
-    const rateLimit = await checkRateLimit(`upload:${userId}`, 60, 60000);
+    const rateLimit = await checkRateLimit(
+      `upload:${userId}`,
+      Math.max(300, settings.rateLimitPerMinute),
+      60000
+    );
     if (!rateLimit.allowed) return apiError("Upload rate limit exceeded", 429);
 
     const body = schema.parse(await request.json());
@@ -48,8 +54,16 @@ export async function POST(request: NextRequest) {
       return apiError("encryptionMeta required when encrypted", 400);
     }
 
+    const policy = isUploadAllowed(body.mimeType, body.filename, settings);
+    if (!policy.allowed) {
+      return apiError(policy.reason ?? "File type not allowed", 400);
+    }
+
     if (body.sizeBytes > getMaxFileSize()) {
-      return apiError("File exceeds maximum size", 400);
+      return apiError(
+        `File exceeds maximum size (${settings.maxUploadSizeMB} MB)`,
+        400
+      );
     }
 
     if (body.folderId) {

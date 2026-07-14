@@ -11,6 +11,8 @@ import postgres from "postgres";
 import * as schema from "../lib/db/schema";
 import { files, webhooks } from "../lib/db/schema";
 import { QUEUE_NAME } from "../lib/queue";
+import { runScheduledCleanups } from "./cleanup";
+import { Queue } from "bullmq";
 
 const execFileAsync = promisify(execFile);
 
@@ -348,6 +350,9 @@ const worker = new Worker(
           body: data.body!,
         });
         break;
+      case "cleanup_schedules":
+        await runScheduledCleanups(db);
+        break;
     }
   },
   {
@@ -359,5 +364,26 @@ const worker = new Worker(
 worker.on("completed", (job) => console.log(`Job ${job.id} completed`));
 worker.on("failed", (job, err) => console.error(`Job ${job?.id} failed:`, err?.message ?? err));
 worker.on("error", (err) => console.error("Worker error:", err.message));
+
+// Register hourly cleanup job
+(async () => {
+  try {
+    const q = new Queue(QUEUE_NAME, { connection: redisConnection });
+    await q.add(
+      "cleanup_schedules",
+      { type: "cleanup_schedules" },
+      {
+        jobId: "cleanup-schedules-hourly",
+        repeat: { every: 60 * 60 * 1000 },
+        removeOnComplete: 20,
+        removeOnFail: 20,
+      }
+    );
+    await q.close();
+    console.log("Cleanup schedule registered (hourly)");
+  } catch (err) {
+    console.error("Failed to register cleanup schedule", err);
+  }
+})();
 
 console.log(`Storage worker started (redis://${redisConnection.host}:${redisConnection.port})`);

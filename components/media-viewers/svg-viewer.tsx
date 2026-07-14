@@ -14,7 +14,7 @@ export function SvgViewer({ src, fileName }: SvgViewerProps) {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch(src)
+    fetch(src, { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load");
         return r.text();

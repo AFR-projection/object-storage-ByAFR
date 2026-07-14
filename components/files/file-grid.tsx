@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { cn, formatBytes, formatDate, getMimeCategory } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { FloatingActionMenu, useFloatingMenu, type FloatingMenuItem } from "@/components/ui/floating-action-menu";
 import type { File as FileRecord } from "@/lib/db/schema";
 
 const ROW_HEIGHT = 56;
@@ -108,20 +109,27 @@ function useThumbnail(fileId: string, hasThumb: boolean) {
   return { containerRef, currentSrc, loaded, setLoaded, error, setError };
 }
 
-// ─── Dropdown hook ──────────────────────────────────────────────────────────
+// ─── File action menu items ─────────────────────────────────────────────────
 
-function useDropdown() {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!openId) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpenId(null);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [openId]);
-  return { openId, setOpenId, ref };
+function buildFileMenuItems(
+  file: FileRecord,
+  trash: boolean | undefined,
+  onAction: (action: string, file: FileRecord) => void
+): FloatingMenuItem[] {
+  if (trash) {
+    return [
+      { id: "restore", label: "Restore", icon: RotateCcw, onClick: () => onAction("restore", file) },
+      { id: "delete", label: "Delete permanently", icon: Trash2, danger: true, onClick: () => onAction("delete", file) },
+    ];
+  }
+  return [
+    { id: "download", label: "Download", icon: Download, onClick: () => onAction("download", file) },
+    { id: "share", label: "Share", icon: Share2, onClick: () => onAction("share", file) },
+    { id: "rename", label: "Rename", icon: Pencil, onClick: () => onAction("rename", file) },
+    { id: "favorite", label: file.isFavorite ? "Unfavorite" : "Favorite", icon: Star, onClick: () => onAction("favorite", file) },
+    { id: "duplicate", label: "Duplicate", icon: Copy, onClick: () => onAction("duplicate", file) },
+    { id: "delete", label: "Move to trash", icon: Trash2, danger: true, onClick: () => onAction("delete", file) },
+  ];
 }
 
 // ─── Sort header ────────────────────────────────────────────────────────────
@@ -468,7 +476,7 @@ const GridCard = memo(function GridCard({
         {isAudio && <AudioOverlay />}
 
         <div
-          className="absolute inset-x-2 bottom-2 z-30 flex md:hidden md:group-hover:flex items-center justify-center"
+          className="absolute right-2 bottom-2 z-30 flex md:hidden md:group-hover:flex items-center"
           onClick={(e) => e.stopPropagation()}
         >
           <CardActions file={file} trash={trash} onAction={onFileAction} />
@@ -498,8 +506,9 @@ const ListRow = memo(function ListRow({
   style: React.CSSProperties; onFileAction: (a: string, f: FileRecord) => void;
   onFileClick: (f: FileRecord) => void; onSelect: (id: string, shiftKey?: boolean) => void;
 }) {
-  const { openId, setOpenId, ref } = useDropdown();
+  const menu = useFloatingMenu();
   const hasThumb = !!file.thumbnailKey;
+  const menuItems = buildFileMenuItems(file, trash, onFileAction);
 
   return (
     <div
@@ -565,19 +574,23 @@ const ListRow = memo(function ListRow({
 
       {/* Actions */}
       <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
-        <div ref={ref} className="relative">
-          <Button
-            variant="ghost" size="icon"
-            className="h-10 w-10 sm:h-8 sm:w-8 rounded-lg text-muted-foreground/50 hover:text-foreground"
-            onClick={() => setOpenId(openId === file.id ? null : file.id)}
-            aria-label="More actions"
-          >
-            <MoreHorizontal className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-          </Button>
-          {openId === file.id && (
-            <DropdownItems file={file} trash={trash} onAction={onFileAction} onClose={() => setOpenId(null)} />
-          )}
-        </div>
+        <Button
+          ref={menu.anchorRef}
+          variant="ghost" size="icon"
+          className="h-10 w-10 sm:h-8 sm:w-8 rounded-lg text-muted-foreground/50 hover:text-foreground"
+          onClick={() => menu.toggle(file.id)}
+          aria-label="More actions"
+          aria-expanded={menu.isOpen(file.id)}
+        >
+          <MoreHorizontal className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+        </Button>
+        <FloatingActionMenu
+          open={menu.isOpen(file.id)}
+          onClose={menu.close}
+          anchorRef={menu.anchorRef}
+          items={menuItems}
+          align="end"
+        />
       </div>
     </div>
   );
@@ -621,77 +634,50 @@ function ThumbnailCard({ file, children }: { file: FileRecord; children: React.R
   );
 }
 
-// ─── Dropdown ───────────────────────────────────────────────────────────────
-
-function DropdownItems({ file, trash, onAction, onClose }: {
-  file: FileRecord; trash?: boolean;
-  onAction: (action: string, file: FileRecord) => void;
-  onClose: () => void;
-}) {
-  const items = trash
-    ? [
-        { action: "restore", icon: RotateCcw, label: "Restore" },
-        { action: "delete", icon: Trash2, label: "Delete permanently", danger: true },
-      ]
-    : [
-        { action: "download", icon: Download, label: "Download" },
-        { action: "share", icon: Share2, label: "Share" },
-        { action: "rename", icon: Pencil, label: "Rename" },
-        { action: "favorite", icon: Star, label: file.isFavorite ? "Unfavorite" : "Favorite" },
-        { action: "duplicate", icon: Copy, label: "Duplicate" },
-        { action: "delete", icon: Trash2, label: "Move to trash", danger: true },
-      ];
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.92, y: 4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      className="absolute right-0 bottom-full mb-2 z-50 min-w-[160px] rounded-xl border border-border/60 bg-surface-elevated shadow-xl overflow-hidden"
-    >
-      {items.map(({ action, icon: Icon, label, danger }) => (
-        <button
-          key={action}
-          onClick={(e) => { e.stopPropagation(); onAction(action, file); onClose(); }}
-          className={cn(
-            "flex w-full items-center gap-2 px-3 py-2.5 text-xs font-medium transition-colors hover:bg-accent/10",
-            danger ? "text-danger hover:bg-danger/10" : "text-foreground"
-          )}
-        >
-          <Icon className="h-3.5 w-3.5 shrink-0" />
-          {label}
-        </button>
-      ))}
-    </motion.div>
-  );
-}
-
 // ─── Card actions ────────────────────────────────────────────────────────────
 
 function CardActions({ file, trash, onAction }: {
   file: FileRecord; trash?: boolean;
   onAction: (action: string, file: FileRecord) => void;
 }) {
-  const { openId, setOpenId, ref } = useDropdown();
-  const open = openId === file.id;
+  const menu = useFloatingMenu();
+  const menuItems = buildFileMenuItems(file, trash, onAction);
 
   return (
-    <div ref={ref} className="relative flex items-center gap-1">
-      <Button
-        variant="ghost" size="icon-sm"
-        className="h-7 w-7 rounded-lg bg-surface/90 backdrop-blur-sm border border-border/40 text-muted-foreground hover:text-foreground"
-        onClick={() => onAction("download", file)} title="Download"
-      >
-        <Download className="h-3 w-3" />
-      </Button>
-      <Button
-        variant="ghost" size="icon-sm"
-        className="h-7 w-7 rounded-lg bg-surface/90 backdrop-blur-sm border border-border/40 text-muted-foreground hover:text-foreground"
-        onClick={() => setOpenId(open ? null : file.id)} title="More"
-      >
-        <MoreHorizontal className="h-3 w-3" />
-      </Button>
-      {open && <DropdownItems file={file} trash={trash} onAction={onAction} onClose={() => setOpenId(null)} />}
-    </div>
+    <>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost" size="icon-sm"
+          className="h-8 w-8 rounded-lg bg-surface/90 backdrop-blur-sm border border-border/40 text-muted-foreground hover:text-foreground shadow-sm"
+          onClick={() => onAction("download", file)}
+          title="Download"
+          aria-label="Download"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          ref={menu.anchorRef}
+          variant="ghost" size="icon-sm"
+          className={cn(
+            "h-8 w-8 rounded-lg bg-surface/90 backdrop-blur-sm border border-border/40 text-muted-foreground hover:text-foreground shadow-sm",
+            menu.isOpen(file.id) && "border-accent/40 bg-surface-elevated text-foreground"
+          )}
+          onClick={() => menu.toggle(file.id)}
+          title="More actions"
+          aria-label="More actions"
+          aria-expanded={menu.isOpen(file.id)}
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <FloatingActionMenu
+        open={menu.isOpen(file.id)}
+        onClose={menu.close}
+        anchorRef={menu.anchorRef}
+        items={menuItems}
+        align="end"
+      />
+    </>
   );
 }
 

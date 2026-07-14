@@ -165,11 +165,27 @@ export default function RecycleBinPage() {
   async function handleBatchRestore() {
     setActionLoading("batch-restore");
     try {
+      const fileIds: string[] = [];
+      const folderIds: string[] = [];
       for (const id of selected) {
         const item = items.find((i) => i.id === id);
         if (!item) continue;
-        const endpoint = item._type === "file" ? "/api/files" : "/api/folders";
-        await apiFetch(endpoint, { method: "PATCH", body: JSON.stringify({ id, action: "restore" }) });
+        if (item._type === "file") fileIds.push(id);
+        else folderIds.push(id);
+      }
+      if (fileIds.length) {
+        const res = await apiFetch("/api/files/batch", {
+          method: "PATCH",
+          body: JSON.stringify({ ids: fileIds, action: "restore" }),
+        });
+        if (!res.success) { showMsg(res.error ?? "Failed to restore files"); return; }
+      }
+      if (folderIds.length) {
+        const res = await apiFetch("/api/folders/batch", {
+          method: "PATCH",
+          body: JSON.stringify({ ids: folderIds, action: "restore" }),
+        });
+        if (!res.success) { showMsg(res.error ?? "Failed to restore folders"); return; }
       }
       showMsg(`${selected.size} item${selected.size > 1 ? "s" : ""} restored`);
       setSelected(new Set());
@@ -181,11 +197,27 @@ export default function RecycleBinPage() {
   async function handleBatchDelete() {
     setActionLoading("batch-delete");
     try {
+      const fileIds: string[] = [];
+      const folderIds: string[] = [];
       for (const id of selected) {
         const item = items.find((i) => i.id === id);
         if (!item) continue;
-        const endpoint = item._type === "file" ? "/api/files" : "/api/folders";
-        await apiFetch(endpoint, { method: "DELETE", body: JSON.stringify({ id, permanent: true }) });
+        if (item._type === "file") fileIds.push(id);
+        else folderIds.push(id);
+      }
+      if (fileIds.length) {
+        const res = await apiFetch("/api/files/batch", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: fileIds, permanent: true }),
+        });
+        if (!res.success) { showMsg(res.error ?? "Failed to delete files"); return; }
+      }
+      if (folderIds.length) {
+        const res = await apiFetch("/api/folders/batch", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: folderIds, permanent: true }),
+        });
+        if (!res.success) { showMsg(res.error ?? "Failed to delete folders"); return; }
       }
       showMsg(`${selected.size} item${selected.size > 1 ? "s" : ""} permanently deleted`);
       setSelected(new Set());
@@ -197,13 +229,29 @@ export default function RecycleBinPage() {
   async function handleEmptyTrash() {
     setActionLoading("empty");
     try {
-      for (const item of items) {
-        const endpoint = item._type === "file" ? "/api/files" : "/api/folders";
-        await apiFetch(endpoint, { method: "DELETE", body: JSON.stringify({ id: item.id, permanent: true }) });
+      const fileIds = items.filter((i) => i._type === "file").map((i) => i.id);
+      const folderIds = items.filter((i) => i._type === "folder").map((i) => i.id);
+      for (let i = 0; i < fileIds.length; i += 500) {
+        const chunk = fileIds.slice(i, i + 500);
+        const res = await apiFetch("/api/files/batch", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: chunk, permanent: true }),
+        });
+        if (!res.success) { showMsg(res.error ?? "Failed to empty trash"); return; }
+      }
+      for (let i = 0; i < folderIds.length; i += 500) {
+        const chunk = folderIds.slice(i, i + 500);
+        const res = await apiFetch("/api/folders/batch", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: chunk, permanent: true }),
+        });
+        if (!res.success) { showMsg(res.error ?? "Failed to empty trash"); return; }
       }
       showMsg("Recycle bin emptied");
       setConfirmEmpty(false);
+      setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: ["recycle-bin"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } catch { showMsg("Failed to empty trash"); }
     finally { setActionLoading(null); }
   }

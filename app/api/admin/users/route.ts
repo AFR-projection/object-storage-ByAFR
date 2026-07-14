@@ -11,6 +11,7 @@ import { validatePasswordStrength } from "@/lib/security/password-policy";
 import { deleteR2Object } from "@/lib/storage/r2";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { cacheDelPattern } from "@/lib/cache/redis";
+import { defaultQuotaBytes, getAdminSettings } from "@/lib/admin-settings";
 
 export async function GET() {
   try {
@@ -28,7 +29,7 @@ const createUserSchema = z.object({
   email: z.string().email().optional(),
   password: z.string().min(8),
   role: z.enum(["user"]).default("user"),
-  quotaBytes: z.number().int().positive().default(10737418240),
+  quotaBytes: z.number().int().positive().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
     const master = await requireMaster();
     const body = createUserSchema.parse(await request.json());
     const ip = getClientIp(request);
+    const settings = await getAdminSettings();
 
     // PASSWORD STRENGTH VALIDATION
     const passwordCheck = validatePasswordStrength(body.password);
@@ -46,6 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const passwordHash = await hashPassword(body.password);
+    const quotaBytes = body.quotaBytes ?? defaultQuotaBytes(settings);
 
     const [user] = await db
       .insert(users)
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest) {
         email: body.email ?? null,
         passwordHash,
         role: body.role,
-        quotaBytes: body.quotaBytes,
+        quotaBytes,
       })
       .returning();
 

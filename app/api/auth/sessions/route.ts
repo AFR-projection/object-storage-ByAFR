@@ -2,19 +2,15 @@ import { NextRequest } from "next/server";
 import { and, desc, eq, gt, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sessions } from "@/lib/db/schema";
-import { requireAuth, destroySession, getClientIp } from "@/lib/auth/session";
+import { requireAuth, destroySession, getClientIp, deviceLabelFromUa } from "@/lib/auth/session";
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { logActivity } from "@/lib/auth/audit";
 import { publishToUser } from "@/lib/realtime/events";
 
-function deviceLabel(userAgent: string | null): string {
-  if (!userAgent) return "Unknown device";
-  if (/Mobile|Android|iPhone/i.test(userAgent)) return "Mobile browser";
-  if (/Macintosh|Mac OS/i.test(userAgent)) return "Mac browser";
-  if (/Windows/i.test(userAgent)) return "Windows browser";
-  if (/Linux/i.test(userAgent)) return "Linux browser";
-  return "Browser";
+function truncateId(id: string): string {
+  if (id.length <= 10) return id;
+  return `${id.slice(0, 4)}…${id.slice(-4)}`;
 }
 
 export async function GET() {
@@ -29,9 +25,10 @@ export async function GET() {
     return apiSuccess({
       sessions: rows.map((s) => ({
         id: s.id,
+        idShort: truncateId(s.id),
         ip: s.ip,
         userAgent: s.userAgent,
-        deviceLabel: s.deviceLabel || deviceLabel(s.userAgent),
+        deviceLabel: s.deviceLabel || deviceLabelFromUa(s.userAgent),
         createdAt: s.createdAt,
         lastActiveAt: s.lastActiveAt,
         expiresAt: s.expiresAt,

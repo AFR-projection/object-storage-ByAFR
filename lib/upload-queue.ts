@@ -1,6 +1,10 @@
 "use client";
 
 import { encryptFile, type EncryptionMetaV1 } from "@/lib/crypto/client-encryption";
+import {
+  MULTIPART_PART_SIZE_BYTES,
+  MULTIPART_PARALLEL_PARTS,
+} from "@/lib/storage/upload-constants";
 
 export interface UploadItem {
   id: string;
@@ -36,9 +40,24 @@ type UploadQueueEvents = {
   allComplete: () => void;
 };
 
-const MAX_CONCURRENT = 6;
+const MAX_CONCURRENT = 12;
+const BATCH_SIZE = 50;
 const MAX_RETRIES = 2;
 const SPEED_SAMPLE_SIZE = 5;
+
+type MultipartInfo = {
+  uploadId: string;
+  partSize: number;
+  parts: { partNumber: number; url: string }[];
+};
+
+type PresignBatchItem = {
+  clientId?: string;
+  fileId: string;
+  r2Key: string;
+  uploadUrl?: string;
+  multipart?: MultipartInfo;
+};
 
 let csrfToken: string | null = null;
 async function getCsrf(): Promise<string> {
@@ -49,7 +68,10 @@ async function getCsrf(): Promise<string> {
   return csrfToken!;
 }
 
-async function apiPost<T>(url: string, body: Record<string, unknown>): Promise<{ success: boolean; data?: T; error?: string }> {
+async function apiPost<T>(
+  url: string,
+  body: Record<string, unknown>
+): Promise<{ success: boolean; data?: T; error?: string }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-csrf-token": await getCsrf() },
@@ -63,14 +85,85 @@ function uid(): string {
   return `up_${Date.now()}_${++counter}`;
 }
 
+async function mapPool<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+}
+
+function putBlob(
+  url: string,
+  blob: Blob,
+  contentType: string,
+  onProgress: (loaded: number, total: number) => void,
+  signal?: { aborted: boolean; xhr?: XMLHttpRequest }
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    if (signal) signal.xhr = xhr;
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) onProgress(e.loaded, e.total);
+    });
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed (HTTP ${xhr.status})`));
+    });
+    xhr.addEventListener("error", () => reject(new Error("Network error")));
+    xhr.addEventListener("abort", () => reject(new Error("Cancelled")));
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.send(blob);
+  });
+}
+
+function putPart(
+  url: string,
+  blob: Blob,
+  signal?: { aborted: boolean; xhrs: XMLHttpRequest[] }
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    signal?.xhrs.push(xhr);
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const etag = xhr.getResponseHeader("ETag");
+        if (!etag) {
+          reject(new Error("Missing ETag from part upload"));
+          return;
+        }
+        resolve(etag);
+      } else {
+        reject(new Error(`Part upload failed (HTTP ${xhr.status})`));
+      }
+    });
+    xhr.addEventListener("error", () => reject(new Error("Network error")));
+    xhr.addEventListener("abort", () => reject(new Error("Cancelled")));
+    xhr.open("PUT", url);
+    xhr.send(blob);
+  });
+}
+
 export class UploadQueue {
   private items: UploadItem[] = [];
   private listeners: Partial<UploadQueueEvents> = {};
-  private activeCount = 0;
+  private processing = false;
   private paused = false;
   private speedSamples: number[] = [];
   private encryptEnabled = false;
   private encryptPassphrase: string | null = null;
+  private abortSignals = new Map<
+    string,
+    { aborted: boolean; xhr?: XMLHttpRequest; xhrs: XMLHttpRequest[] }
+  >();
 
   setEncryption(enabled: boolean, passphrase: string | null) {
     this.encryptEnabled = enabled;
@@ -111,6 +204,11 @@ export class UploadQueue {
     return sum / this.speedSamples.length;
   }
 
+  private trackSpeed(bytesPerSec: number) {
+    this.speedSamples.push(bytesPerSec);
+    if (this.speedSamples.length > SPEED_SAMPLE_SIZE) this.speedSamples.shift();
+  }
+
   addFiles(files: File[], baseFolderId: string | null = null, pathPrefix: string = "") {
     for (const file of files) {
       const remotePath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
@@ -127,7 +225,7 @@ export class UploadQueue {
       });
     }
     this.notify();
-    this.processNext();
+    void this.processNext();
   }
 
   addFolderStructure(entries: { file: File; relativePath: string; folderId: string | null }[]) {
@@ -145,151 +243,283 @@ export class UploadQueue {
       });
     }
     this.notify();
-    this.processNext();
+    void this.processNext();
   }
 
   private async processNext() {
-    if (this.paused) return;
-    while (this.activeCount < MAX_CONCURRENT) {
-      let next: UploadItem | undefined;
-      let nextIdx = -1;
-      for (let i = 0; i < this.items.length; i++) {
-        if (this.items[i].status !== "queued") continue;
-        if (!next || this.items[i].file.size < next.file.size) {
-          next = this.items[i];
-          nextIdx = i;
-        }
-      }
-      if (!next) break;
-      if (nextIdx > 0) {
-        this.items.splice(nextIdx, 1);
-        this.items.unshift(next);
-      }
-      this.activeCount++;
-      this.uploadItem(next).finally(() => {
-        this.activeCount--;
-        this.processNext();
-        if (this.getStats().active === 0 && this.getStats().queued === 0) {
-          this.emit("allComplete");
-        }
-      });
-    }
-  }
+    if (this.paused || this.processing) return;
 
-  private async uploadItem(item: UploadItem) {
-    item.status = "uploading";
+    const queued = this.items.filter((i) => i.status === "queued");
+    if (queued.length === 0) {
+      const stats = this.getStats();
+      if (stats.active === 0) this.emit("allComplete");
+      return;
+    }
+
+    queued.sort((a, b) => a.file.size - b.file.size);
+    const batch = queued.slice(0, BATCH_SIZE);
+    for (const item of batch) item.status = "uploading";
+    this.processing = true;
     this.notify();
 
     try {
-      const shouldEncrypt = !!(item.encrypted && this.encryptPassphrase);
-      let uploadBlob: Blob = item.file;
-      let uploadSize = item.file.size;
-      let uploadMime = item.file.type || "application/octet-stream";
-      let encryptionMeta: EncryptionMetaV1 | undefined;
+      await this.uploadBatch(batch);
+    } finally {
+      this.processing = false;
+      if (!this.paused) void this.processNext();
+    }
+  }
 
-      if (shouldEncrypt) {
-        const encrypted = await encryptFile(item.file, this.encryptPassphrase!);
-        uploadBlob = encrypted.blob;
-        uploadSize = encrypted.sizeBytes;
-        uploadMime = "application/octet-stream";
-        encryptionMeta = encrypted.meta;
+  private async uploadBatch(batch: UploadItem[]) {
+    type Prepared = {
+      item: UploadItem;
+      uploadBlob: Blob;
+      uploadSize: number;
+      uploadMime: string;
+      encryptionMeta?: EncryptionMetaV1;
+      shouldEncrypt: boolean;
+    };
+
+    const prepared: Prepared[] = [];
+
+    for (const item of batch) {
+      if (item.status === "cancelled") continue;
+      try {
+        const shouldEncrypt = !!(item.encrypted && this.encryptPassphrase);
+        let uploadBlob: Blob = item.file;
+        let uploadSize = item.file.size;
+        let uploadMime = item.file.type || "application/octet-stream";
+        let encryptionMeta: EncryptionMetaV1 | undefined;
+
+        if (shouldEncrypt) {
+          const encrypted = await encryptFile(item.file, this.encryptPassphrase!);
+          uploadBlob = encrypted.blob;
+          uploadSize = encrypted.sizeBytes;
+          uploadMime = "application/octet-stream";
+          encryptionMeta = encrypted.meta;
+        }
+
+        prepared.push({ item, uploadBlob, uploadSize, uploadMime, encryptionMeta, shouldEncrypt });
+      } catch (err) {
+        this.failOrRetry(item, err);
       }
+    }
 
-      const presign = await apiPost<{ fileId: string; uploadUrl: string }>("/api/upload/presign", {
-        filename: item.file.name,
-        mimeType: item.file.type || "application/octet-stream",
-        sizeBytes: uploadSize,
-        folderId: item.folderId,
-        encrypted: shouldEncrypt,
-        encryptionMeta,
-      });
+    if (prepared.length === 0) return;
 
-      if (!presign.success || !presign.data) {
-        throw new Error(presign.error ?? "Gagal mempersiapkan upload");
-      }
+    const presign = await apiPost<{ uploads: PresignBatchItem[] }>("/api/upload/presign-batch", {
+      files: prepared.map((p) => ({
+        clientId: p.item.id,
+        filename: p.item.file.name,
+        mimeType: p.item.file.type || "application/octet-stream",
+        sizeBytes: p.uploadSize,
+        folderId: p.item.folderId,
+        encrypted: p.shouldEncrypt,
+        encryptionMeta: p.encryptionMeta,
+      })),
+    });
 
-      const { fileId, uploadUrl } = presign.data;
-      item.fileId = fileId;
+    if (!presign.success || !presign.data?.uploads) {
+      const err = new Error(presign.error ?? "Failed to prepare batch upload");
+      for (const p of prepared) this.failOrRetry(p.item, err);
+      return;
+    }
 
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        let lastLoaded = 0;
-        let lastTime = Date.now();
+    const byClient = new Map(
+     presign.data.uploads.map((u) => [u.clientId ?? u.fileId, u])
+    );
 
-        xhr.upload.addEventListener("progress", (e) => {
-          if (e.lengthComputable) {
-            item.progress = Math.round((e.loaded / e.total) * 100);
+    const completePayload: {
+      fileId: string;
+      encrypted?: boolean;
+      encryptionMeta?: EncryptionMetaV1;
+      originalMimeType?: string;
+      multipart?: { uploadId: string; parts: { partNumber: number; etag: string }[] };
+    }[] = [];
 
-            const now = Date.now();
-            const dt = (now - lastTime) / 1000;
-            if (dt > 0.3) {
-              const bytesPerSec = (e.loaded - lastLoaded) / dt;
-              item.speed = bytesPerSec;
-              this.speedSamples.push(bytesPerSec);
-              if (this.speedSamples.length > SPEED_SAMPLE_SIZE) this.speedSamples.shift();
-              lastLoaded = e.loaded;
-              lastTime = now;
-            }
-            this.notify();
-          }
-        });
+    await mapPool(prepared, MAX_CONCURRENT, async (p) => {
+      const item = p.item;
+      if (item.status === "cancelled") return;
 
-        xhr.addEventListener("load", () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else reject(new Error(`Upload gagal (HTTP ${xhr.status})`));
-        });
-        xhr.addEventListener("error", () => reject(new Error("Network error")));
-        xhr.addEventListener("abort", () => reject(new Error("Cancelled")));
-        xhr.open("PUT", uploadUrl);
-        xhr.setRequestHeader("Content-Type", uploadMime);
-        xhr.send(uploadBlob);
-
-        (item as UploadItem & { _xhr?: XMLHttpRequest })._xhr = xhr;
-      });
-
-      const complete = await apiPost<{ fileId: string; name: string }>("/api/upload/complete", {
-        fileId,
-        encrypted: shouldEncrypt,
-        encryptionMeta,
-        originalMimeType: shouldEncrypt ? item.file.type || "application/octet-stream" : undefined,
-      });
-      if (!complete.success) {
-        throw new Error(complete.error ?? "Upload tidak dapat diselesaikan");
-      }
-
-      item.status = "done";
-      item.progress = 100;
-      this.emit("complete", item);
-      this.notify();
-    } catch (err) {
-      if ((item as UploadItem).status === "cancelled") return;
-
-      if (item.retries < MAX_RETRIES) {
-        item.retries++;
-        item.status = "queued";
-        item.progress = 0;
-        this.notify();
+      const meta = byClient.get(item.id);
+      if (!meta) {
+        this.failOrRetry(item, new Error("Missing presign for file"));
         return;
       }
 
-      item.status = "error";
-      item.error = err instanceof Error ? err.message : "Upload failed";
-      this.emit("error", item, item.error);
+      item.fileId = meta.fileId;
+      const signal = { aborted: false, xhrs: [] as XMLHttpRequest[] };
+      this.abortSignals.set(item.id, signal);
+
+      try {
+        let multipartParts: { partNumber: number; etag: string }[] | undefined;
+
+        if (meta.multipart) {
+          multipartParts = await this.uploadMultipart(item, p.uploadBlob, meta.multipart, signal);
+        } else if (meta.uploadUrl) {
+          let lastLoaded = 0;
+          let lastTime = Date.now();
+          await putBlob(
+            meta.uploadUrl,
+            p.uploadBlob,
+            p.uploadMime,
+            (loaded, total) => {
+              item.progress = Math.round((loaded / total) * 100);
+              const now = Date.now();
+              const dt = (now - lastTime) / 1000;
+              if (dt > 0.3) {
+                const bps = (loaded - lastLoaded) / dt;
+                item.speed = bps;
+                this.trackSpeed(bps);
+                lastLoaded = loaded;
+                lastTime = now;
+              }
+              this.notify();
+            },
+            signal
+          );
+        } else {
+          throw new Error("No upload URL returned");
+        }
+
+        item.progress = 100;
+        this.notify();
+
+        completePayload.push({
+          fileId: meta.fileId,
+          encrypted: p.shouldEncrypt,
+          encryptionMeta: p.encryptionMeta,
+          originalMimeType: p.shouldEncrypt
+            ? p.item.file.type || "application/octet-stream"
+            : undefined,
+          multipart: multipartParts
+            ? { uploadId: meta.multipart!.uploadId, parts: multipartParts }
+            : undefined,
+        });
+      } catch (err) {
+        if ((item.status as UploadItem["status"]) === "cancelled") return;
+        this.failOrRetry(item, err);
+      } finally {
+        this.abortSignals.delete(item.id);
+      }
+    });
+
+    if (completePayload.length === 0) return;
+
+    // complete in chunks of 50
+    for (let i = 0; i < completePayload.length; i += BATCH_SIZE) {
+      const chunk = completePayload.slice(i, i + BATCH_SIZE);
+      const complete = await apiPost<{
+        completed: { fileId: string; name: string }[];
+        failed: { fileId: string; error: string }[];
+      }>("/api/upload/complete-batch", { files: chunk });
+
+      const okIds = new Set((complete.data?.completed ?? []).map((c) => c.fileId));
+      const failMap = new Map((complete.data?.failed ?? []).map((f) => [f.fileId, f.error]));
+
+      for (const entry of chunk) {
+        const item = this.items.find((it) => it.fileId === entry.fileId);
+        if (!item || item.status === "cancelled") continue;
+
+        if (!complete.success) {
+          this.failOrRetry(item, new Error(complete.error ?? "Complete failed"));
+          continue;
+        }
+
+        if (okIds.has(entry.fileId)) {
+          item.status = "done";
+          item.progress = 100;
+          this.emit("complete", item);
+        } else {
+          this.failOrRetry(item, new Error(failMap.get(entry.fileId) ?? "Complete failed"));
+        }
+      }
       this.notify();
     }
+  }
+
+  private async uploadMultipart(
+    item: UploadItem,
+    blob: Blob,
+    multipart: MultipartInfo,
+    signal: { aborted: boolean; xhrs: XMLHttpRequest[] }
+  ): Promise<{ partNumber: number; etag: string }[]> {
+    const partSize = multipart.partSize || MULTIPART_PART_SIZE_BYTES;
+    const results: { partNumber: number; etag: string }[] = [];
+    let uploadedBytes = 0;
+    const total = blob.size;
+    let lastTime = Date.now();
+    let lastBytes = 0;
+
+    await mapPool(multipart.parts, MULTIPART_PARALLEL_PARTS, async (part) => {
+      if (signal.aborted || item.status === "cancelled") throw new Error("Cancelled");
+      const start = (part.partNumber - 1) * partSize;
+      const end = Math.min(start + partSize, total);
+      const slice = blob.slice(start, end);
+
+      let etag: string | null = null;
+      let attempt = 0;
+      while (attempt < 3 && !etag) {
+        try {
+          etag = await putPart(part.url, slice, signal);
+        } catch (err) {
+          attempt++;
+          if (attempt >= 3) throw err;
+        }
+      }
+
+      results.push({ partNumber: part.partNumber, etag: etag! });
+      uploadedBytes += end - start;
+      item.progress = Math.min(99, Math.round((uploadedBytes / total) * 100));
+
+      const now = Date.now();
+      const dt = (now - lastTime) / 1000;
+      if (dt > 0.3) {
+        const bps = (uploadedBytes - lastBytes) / dt;
+        item.speed = bps;
+        this.trackSpeed(bps);
+        lastBytes = uploadedBytes;
+        lastTime = now;
+      }
+      this.notify();
+    });
+
+    return results.sort((a, b) => a.partNumber - b.partNumber);
+  }
+
+  private failOrRetry(item: UploadItem, err: unknown) {
+    if (item.status === "cancelled") return;
+
+    if (item.retries < MAX_RETRIES) {
+      item.retries++;
+      item.status = "queued";
+      item.progress = 0;
+      item.fileId = undefined;
+      this.notify();
+      return;
+    }
+
+    item.status = "error";
+    item.error = err instanceof Error ? err.message : "Upload failed";
+    this.emit("error", item, item.error);
+    this.notify();
   }
 
   cancelItem(id: string) {
     const item = this.items.find((i) => i.id === id);
     if (!item) return;
     if (item.status === "uploading") {
-      const xhr = (item as UploadItem & { _xhr?: XMLHttpRequest })._xhr;
-      if (xhr) xhr.abort();
+      const signal = this.abortSignals.get(id);
+      if (signal) {
+        signal.aborted = true;
+        signal.xhr?.abort();
+        for (const xhr of signal.xhrs) xhr.abort();
+      }
       if (item.fileId) {
         apiPost("/api/upload/cancel", { fileId: item.fileId }).catch(() => {});
       }
     }
-    item.status = "cancelled" as UploadItem["status"];
+    item.status = "cancelled";
     this.notify();
   }
 
@@ -308,8 +538,9 @@ export class UploadQueue {
     item.progress = 0;
     item.error = undefined;
     item.retries = 0;
+    item.fileId = undefined;
     this.notify();
-    this.processNext();
+    void this.processNext();
   }
 
   retryFailed() {
@@ -326,7 +557,7 @@ export class UploadQueue {
 
   resume() {
     this.paused = false;
-    this.processNext();
+    void this.processNext();
   }
 
   clearCompleted() {
@@ -338,6 +569,9 @@ export class UploadQueue {
     return [...this.items];
   }
 }
+
+// Re-export threshold for callers that need to know
+export { MULTIPART_THRESHOLD_BYTES } from "@/lib/storage/upload-constants";
 
 export function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
@@ -352,7 +586,10 @@ export function formatETA(seconds: number): string {
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m remaining`;
 }
 
-export async function traverseDirectory(entry: FileSystemEntry, path: string = ""): Promise<{ file: File; relativePath: string }[]> {
+export async function traverseDirectory(
+  entry: FileSystemEntry,
+  path: string = ""
+): Promise<{ file: File; relativePath: string }[]> {
   const results: { file: File; relativePath: string }[] = [];
 
   if (entry.isFile) {

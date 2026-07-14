@@ -19,7 +19,11 @@ export function apiError(
 
 export function handleApiError(error: unknown) {
   if (error instanceof AuthError) {
-    return apiError(error.message, error.status);
+    return apiError(error.message, error.status, {
+      ...(error.code ? { code: error.code } : {}),
+      ...(error.previousIp ? { previousIp: error.previousIp } : {}),
+      ...(error.currentIp ? { currentIp: error.currentIp } : {}),
+    });
   }
   console.error(error);
   return apiError("Internal server error", 500);

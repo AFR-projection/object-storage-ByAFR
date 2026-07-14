@@ -879,6 +879,7 @@ function MoonIcon(props: React.SVGProps<SVGSVGElement>) {
 
 type DeviceSession = {
   id: string;
+  idShort?: string;
   ip: string | null;
   userAgent: string | null;
   deviceLabel: string;
@@ -982,8 +983,8 @@ function SessionsSection() {
                   )}
                 </div>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  IP: {session.ip ?? "unknown"} · Last active{" "}
-                  {new Date(session.lastActiveAt).toLocaleString()}
+                  IP: {session.ip ?? "unknown"} · Session {session.idShort ?? session.id.slice(0, 8)} · Last
+                  active {new Date(session.lastActiveAt).toLocaleString()}
                 </p>
                 <p className="text-[10px] text-muted-foreground/70">
                   Signed in {new Date(session.createdAt).toLocaleString()}

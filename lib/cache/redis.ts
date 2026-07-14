@@ -91,3 +91,18 @@ export async function redisIncr(key: string, windowMs: number): Promise<number |
     return count;
   }, null);
 }
+
+export async function redisGetInt(key: string): Promise<number | null> {
+  return withRedis(async (client) => {
+    const value = await client.get(key);
+    if (value === null) return 0;
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) ? n : 0;
+  }, null);
+}
+
+export async function redisDel(key: string): Promise<void> {
+  await withRedis(async (client) => {
+    await client.del(key);
+  }, undefined);
+}

@@ -18,6 +18,8 @@ export function AudioViewer({ src, fileName }: AudioViewerProps) {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [retryKey, setRetryKey] = useState(0);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -38,15 +40,18 @@ export function AudioViewer({ src, fileName }: AudioViewerProps) {
     const onTime = () => setCurrentTime(a.currentTime);
     const onDuration = () => setDuration(a.duration);
     const onEnded = () => setPlaying(false);
+    const onCanPlay = () => { setLoading(false); setLoadError(false); };
     a.addEventListener("timeupdate", onTime);
     a.addEventListener("loadedmetadata", onDuration);
     a.addEventListener("ended", onEnded);
+    a.addEventListener("canplay", onCanPlay);
     return () => {
       a.removeEventListener("timeupdate", onTime);
       a.removeEventListener("loadedmetadata", onDuration);
       a.removeEventListener("ended", onEnded);
+      a.removeEventListener("canplay", onCanPlay);
     };
-  }, []);
+  }, [retryKey]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -69,16 +74,24 @@ export function AudioViewer({ src, fileName }: AudioViewerProps) {
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="flex flex-col items-center justify-center h-full p-6">
-      <audio ref={audioRef} src={src} preload="metadata" onError={() => setLoadError(true)} />
+    <div className="relative flex flex-col items-center justify-center h-full p-6">
+      <audio key={retryKey} ref={audioRef} src={src} preload="auto" onError={() => { setLoadError(true); setLoading(false); }} />
 
       {loadError ? (
         <div className="text-center text-muted-foreground">
           <Music className="h-12 w-12 mx-auto mb-3 opacity-50" />
-          <p className="text-sm">Audio tidak dapat diputar</p>
+          <p className="text-sm mb-3">Audio tidak dapat diputar</p>
+          <Button variant="secondary" size="sm" onClick={() => { setLoadError(false); setLoading(true); setRetryKey((k) => k + 1); }}>
+            Coba lagi
+          </Button>
         </div>
       ) : (
         <>
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+            </div>
+          )}
           <div className="w-full max-w-md mb-8">
             <div className="flex items-end justify-center gap-[2px] h-24 mb-4">
               {Array.from({ length: 48 }).map((_, i) => {
