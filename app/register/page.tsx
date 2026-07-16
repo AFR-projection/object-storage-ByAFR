@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Cloud, Loader2, Eye, EyeOff } from "lucide-react";
+import { Cloud, Loader2, Eye, EyeOff, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
@@ -13,7 +13,7 @@ import { getPasswordPolicyRules } from "@/lib/security/password-policy";
 export default function RegisterPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -51,11 +51,11 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
     try {
-      const res = await apiFetch("/api/auth/register", {
+      const res = await apiFetch("/api/auth/register-wa", {
         method: "POST",
         body: JSON.stringify({
           username,
-          email: email || undefined,
+          phoneNumber,
           password,
         }),
       });
@@ -63,8 +63,7 @@ export default function RegisterPage() {
         setError(res.error ?? "Registration failed");
         return;
       }
-      router.push("/dashboard");
-      router.refresh();
+      router.push(`/verify-wa?phone=${encodeURIComponent(phoneNumber)}`);
     } catch {
       setError("Connection failed");
     } finally {
@@ -111,16 +110,20 @@ export default function RegisterPage() {
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium">
-                Email <span className="text-muted-foreground">(optional)</span>
+              <label className="mb-1.5 block text-sm font-medium flex items-center gap-2">
+                <MessageCircle className="h-4 w-4" />
+                Nomor WhatsApp
               </label>
               <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
+                type="tel"
+                placeholder="62812345678"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                required
+                minLength={10}
                 className="h-11"
               />
+              <p className="mt-1 text-xs text-muted-foreground">Format: 62XXXXXXXXXX (tanpa +)</p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium">Password</label>
@@ -153,8 +156,8 @@ export default function RegisterPage() {
               <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</p>
             )}
 
-            <Button type="submit" className="h-11 w-full" disabled={loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign up"}
+            <Button type="submit" className="h-11 w-full" disabled={loading || !username || !phoneNumber || !password}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Lanjut"}
             </Button>
           </form>
 

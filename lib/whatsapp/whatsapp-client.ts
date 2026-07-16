@@ -96,10 +96,21 @@ export async function initWAClient(senderId: string, phoneNumber: string) {
   socket.ev.on("creds.update", saveCreds);
 
   socket.ev.on("messages.upsert", async ({ messages }) => {
-    for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe || isJidBroadcast(msg.key.remoteJid!))
-        continue;
-      console.log(`[WA] Message from ${msg.key.remoteJid}: ${msg.message.conversation}`);
+    try {
+      const { handleIncomingMessage } = await import("./message-handler");
+      for (const msg of messages) {
+        if (!msg.message || msg.key.fromMe || isJidBroadcast(msg.key.remoteJid!))
+          continue;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        if (!text) continue;
+        const from = msg.key.remoteJid!.split("@")[0];
+        const reply = await handleIncomingMessage(from, text);
+        if (reply) {
+          await sendMessage(senderId, from, reply);
+        }
+      }
+    } catch (err) {
+      console.error(`[WA] Message handler error:`, err);
     }
   });
 
