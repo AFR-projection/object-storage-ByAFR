@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { whatsappSenders } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { mkdir, rm } from "fs/promises";
+import { existsSync } from "fs";
 import path from "path";
 
 type WAStatus = "connecting" | "connected" | "disconnected" | "error";
@@ -67,6 +68,11 @@ export async function initWAClient(
     browser: ["Storage ByAFR", "Chrome", "121.0.0"],
     markOnlineOnConnect: true,
     keepAliveIntervalMs: 30_000,
+    connectTimeoutMs: 60_000,
+    // Bound every query (onWhatsApp, sendMessage acks, init) so a half-open
+    // socket fails fast instead of hanging the HTTP request behind it.
+    defaultQueryTimeoutMs: 20_000,
+    retryRequestDelayMs: 500,
     qrTimeout: usePairingCode ? undefined : 60_000,
   });
 
@@ -196,9 +202,34 @@ export async function initWAClient(
         const text =
           msg.message.conversation || msg.message.extendedTextMessage?.text;
         if (!text || !msg.key.remoteJid) continue;
-        const from = msg.key.remoteJid.split("@")[0];
+
+        // Baileys 6.7+ delivers many chats as @lid, where remoteJid holds the
+        // LID (not the phone number). The real phone number is carried in the
+        // separate senderPn field — prefer it, and only fall back to parsing
+        // remoteJid when it's a normal @s.whatsapp.net user JID.
+        const remoteJid = msg.key.remoteJid;
+        const senderPn = (msg.key as { senderPn?: string }).senderPn;
+        const phone = senderPn
+          ? senderPn.split("@")[0]
+          : remoteJid.endsWith("@s.whatsapp.net")
+            ? remoteJid.split("@")[0]
+            : null;
+        if (!phone) {
+          console.warn(`[WA] could not resolve phone from key:`, msg.key);
+          continue;
+        }
+
+        const from = phone.replace(/\D/g, "");
+        console.log(`[WA] incoming from ${from} (jid=${remoteJid}): ${text.slice(0, 40)}`);
         const reply = await handleIncomingMessage(from, text);
-        if (reply) await sendMessage(senderId, from, reply);
+        // Reply to the phone-number JID (proven deliverable); fall back to the
+        // original JID. WhatsApp threads the LID and PN chats together, so it
+        // lands in the same conversation the user messaged from.
+        if (reply) {
+          const replyTo = senderPn ?? remoteJid;
+          const ok = await sendMessage(senderId, replyTo, reply);
+          console.log(`[WA] reply to ${from} sent=${ok}`);
+        }
       }
     } catch (err) {
       console.error(`[WA] message handler error:`, err);
@@ -216,6 +247,38 @@ export function getAllWAInstances(): WAInstance[] {
   return Array.from(instances.values());
 }
 
+/**
+ * Ensure a sender's socket is live in memory. After a server restart the DB may
+ * still say "connected" while the in-memory socket is gone; if the on-disk
+ * session is still valid we transparently re-init and wait for it to open.
+ * Returns true when the instance is connected and ready to send.
+ */
+export async function ensureConnected(
+  senderId: string,
+  phoneNumber: string,
+  timeoutMs = 15_000
+): Promise<boolean> {
+  const existing = instances.get(senderId);
+  if (existing?.status === "connected") return true;
+
+  // Only re-init if a persisted session exists (creds present on disk).
+  const credsPath = path.join(sessionDir(senderId), "creds.json");
+  if (!existsSync(credsPath)) return false;
+
+  if (!existing) {
+    await initWAClient(senderId, phoneNumber, false).catch(() => {});
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const inst = instances.get(senderId);
+    if (inst?.status === "connected") return true;
+    if (inst?.status === "disconnected") return false;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return instances.get(senderId)?.status === "connected";
+}
+
 export async function sendMessage(
   senderId: string,
   phoneNumber: string,
@@ -224,9 +287,23 @@ export async function sendMessage(
   const instance = instances.get(senderId);
   if (!instance?.socket || instance.status !== "connected") return false;
 
+  const clean = phoneNumber.replace(/\D/g, "");
+  const jid = phoneNumber.includes("@") ? phoneNumber : `${clean}@s.whatsapp.net`;
+
   try {
-    const clean = phoneNumber.replace(/\D/g, "");
-    const jid = phoneNumber.includes("@") ? phoneNumber : `${clean}@s.whatsapp.net`;
+    // Verify the destination is actually on WhatsApp before sending. This also
+    // acts as a live liveness probe: on a half-open socket this query times out
+    // (bounded by defaultQueryTimeoutMs) and we correctly report failure instead
+    // of optimistically claiming success for a message that never left.
+    if (!phoneNumber.includes("@")) {
+      const results = await instance.socket.onWhatsApp(clean);
+      const hit = results?.find((r) => r.exists);
+      if (!hit) {
+        console.error(`[WA] recipient not on WhatsApp: ${clean}`);
+        return false;
+      }
+    }
+
     await instance.socket.sendMessage(jid, { text: message });
     return true;
   } catch (err) {

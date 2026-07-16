@@ -8,7 +8,7 @@ import { validateCsrf, checkRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { getAdminSettings, defaultQuotaBytes } from "@/lib/admin-settings";
 import { validatePasswordStrength } from "@/lib/security/password-policy";
-import { sendCustomMessage } from "@/lib/whatsapp/whatsapp-service";
+import { sendCustomMessage, isSenderNumber } from "@/lib/whatsapp/whatsapp-service";
 import { getClientIp } from "@/lib/auth/session";
 
 const registerSchema = z.object({
@@ -35,6 +35,15 @@ export async function POST(request: NextRequest) {
     const body = registerSchema.parse(await request.json());
     const cleanPhone = body.phoneNumber.replace(/\D/g, "");
 
+    // A WhatsApp sender cannot register itself: its own OTP message would arrive
+    // as fromMe and the "reply SAVE" confirmation could never be processed.
+    if (await isSenderNumber(cleanPhone)) {
+      return apiError(
+        "This number is used as a WhatsApp sender and cannot be registered as a user. Please use a different number.",
+        400
+      );
+    }
+
     const passwordCheck = validatePasswordStrength(body.password);
     if (!passwordCheck.valid) {
       return apiError(`Password too weak: ${passwordCheck.errors.join(", ")}`, 400);
@@ -47,7 +56,7 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (existing) {
-      return apiError("Username atau nomor WhatsApp sudah terdaftar", 409);
+      return apiError("Username or WhatsApp number is already registered", 409);
     }
 
     const passwordHash = await hashPassword(body.password);
@@ -65,13 +74,13 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    const msg = `Notifikasi dari Storage ByAFR.\n\nUntuk menerima kode OTP, silakan balas pesan ini dengan kata:\n\nSAVE`;
+    const msg = `Notification from Storage ByAFR.\n\nTo receive your OTP code, please reply to this message with the word:\n\nSAVE`;
     const sent = await sendCustomMessage(cleanPhone, msg);
 
     if (!sent) {
       await db.delete(users).where(eq(users.id, user.id));
       return apiError(
-        "Gagal mengirim pesan WhatsApp. Pastikan nomor benar & sistem WhatsApp aktif.",
+        "Failed to send WhatsApp message. Please make sure the number is correct and the WhatsApp system is active.",
         503
       );
     }
@@ -79,7 +88,7 @@ export async function POST(request: NextRequest) {
     return apiSuccess({
       userId: user.id,
       phoneNumber: cleanPhone,
-      message: "Cek WhatsApp Anda untuk instruksi berikutnya",
+      message: "Check your WhatsApp for the next instructions",
     });
   } catch (error) {
     return handleApiError(error);
