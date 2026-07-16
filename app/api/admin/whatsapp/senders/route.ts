@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     // Pairing mode needs a valid phone number with country code.
     if (body.method === "pairing" && cleanPhone.length < 10) {
-      return apiError("Nomor WhatsApp tidak valid untuk pairing (min 10 digit dengan kode negara)", 400);
+      return apiError("Invalid WhatsApp number for pairing (min 10 digits with country code)", 400);
     }
 
     const [sender] = await db

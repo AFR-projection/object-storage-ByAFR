@@ -74,7 +74,7 @@ export default function WhatsAppSettings() {
         method: "POST",
         body: JSON.stringify(data),
       });
-      if (!res.success) throw new Error(res.error ?? "Gagal menambah sender");
+      if (!res.success) throw new Error(res.error ?? "Failed to add sender");
       return res.data?.id;
     },
     onSuccess: (senderId) => {
@@ -116,10 +116,10 @@ export default function WhatsAppSettings() {
     : "bg-gray-400";
 
   const statusText = (s: string) =>
-    s === "connected" ? "🟢 Terhubung"
-    : s === "connecting" ? "🟡 Menghubungkan..."
+    s === "connected" ? "🟢 Connected"
+    : s === "connecting" ? "🟡 Connecting..."
     : s === "error" ? "🔴 Error"
-    : "⚫ Terputus";
+    : "⚫ Disconnected";
 
   return (
     <div className="space-y-6">
@@ -127,12 +127,12 @@ export default function WhatsAppSettings() {
         <div>
           <h1 className="text-3xl font-bold">WhatsApp Gateway</h1>
           <p className="text-muted-foreground mt-1">
-            Kelola nomor WhatsApp untuk pengiriman OTP & notifikasi
+            Manage WhatsApp numbers for sending OTP & notifications
           </p>
         </div>
         <Button onClick={() => setShowAddModal(true)} className="gap-2" size="lg">
           <Plus className="w-4 h-4" />
-          Tambah Sender
+          Add Sender
         </Button>
       </div>
 
@@ -144,7 +144,7 @@ export default function WhatsAppSettings() {
         <Card>
           <CardContent className="py-12 text-center">
             <MessageCircle className="w-12 h-12 mx-auto text-muted-foreground/40 mb-4" />
-            <p className="text-muted-foreground">Belum ada WhatsApp sender</p>
+            <p className="text-muted-foreground">No WhatsApp sender yet</p>
           </CardContent>
         </Card>
       ) : (
@@ -178,7 +178,7 @@ export default function WhatsAppSettings() {
                           className="gap-2"
                         >
                           <QrCode className="w-4 h-4" />
-                          Hubungkan
+                          Connect
                         </Button>
                       )}
                       <Button
@@ -200,7 +200,7 @@ export default function WhatsAppSettings() {
                         className="text-red-500 hover:text-red-600"
                         onClick={() => deleteSender.mutate(sender.id)}
                         disabled={deleteSender.isPending}
-                        title="Hapus"
+                        title="Delete"
                       >
                         {deleteSender.isPending ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -233,7 +233,7 @@ export default function WhatsAppSettings() {
               className="bg-background rounded-lg p-6 w-full max-w-md border"
             >
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">Tambah WhatsApp Sender</h2>
+                <h2 className="text-xl font-bold">Add WhatsApp Sender</h2>
                 <button onClick={() => setShowAddModal(false)}>
                   <X className="w-5 h-5" />
                 </button>
@@ -259,40 +259,40 @@ export default function WhatsAppSettings() {
                   )}
                 >
                   <Phone className="w-4 h-4" />
-                  Kode Nomor HP
+                  Phone Number Code
                 </button>
               </div>
 
               <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Nama Penampilan</label>
+                  <label className="block text-sm font-medium mb-2">Display Name</label>
                   <Input
-                    placeholder="Contoh: Sender Utama"
+                    placeholder="e.g. Main Sender"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Nomor WhatsApp</label>
+                  <label className="block text-sm font-medium mb-2">WhatsApp Number</label>
                   <Input
                     placeholder="628123456789"
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Format: 628XXXXXXXXX (dengan kode negara, tanpa +)
+                    Format: 628XXXXXXXXX (with country code, without +)
                   </p>
                 </div>
                 <p className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950 p-3 rounded">
                   {method === "qr" ? (
                     <>
-                      <b>Mode QR:</b> Setelah klik, QR Code muncul. Buka WhatsApp →
-                      Perangkat Tertaut → Tautkan Perangkat → scan QR.
+                      <b>QR Mode:</b> After clicking, a QR Code appears. Open WhatsApp →
+                      Linked Devices → Link a Device → scan the QR.
                     </>
                   ) : (
                     <>
-                      <b>Mode Kode:</b> Setelah klik, muncul kode 8 digit. Buka WhatsApp →
-                      Perangkat Tertaut → Tautkan dengan nomor telepon → masukkan kode.
+                      <b>Code Mode:</b> After clicking, an 8-digit code appears. Open WhatsApp →
+                      Linked Devices → Link with phone number → enter the code.
                     </>
                   )}
                 </p>
@@ -306,7 +306,7 @@ export default function WhatsAppSettings() {
 
               <div className="flex gap-3">
                 <Button variant="outline" onClick={() => setShowAddModal(false)} className="flex-1">
-                  Batal
+                  Cancel
                 </Button>
                 <Button
                   onClick={() => addSender.mutate({ phoneNumber, displayName, method })}
@@ -320,7 +320,7 @@ export default function WhatsAppSettings() {
                   ) : (
                     <Phone className="w-4 h-4" />
                   )}
-                  {method === "qr" ? "Tampilkan QR" : "Tampilkan Kode"}
+                  {method === "qr" ? "Show QR" : "Show Code"}
                 </Button>
               </div>
             </motion.div>
@@ -344,7 +344,7 @@ export default function WhatsAppSettings() {
               className="bg-background rounded-lg p-6 w-full max-w-md border"
             >
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold">Hubungkan WhatsApp</h2>
+                <h2 className="text-xl font-bold">Connect WhatsApp</h2>
                 <button onClick={() => setConnectModal(null)}>
                   <X className="w-5 h-5" />
                 </button>
@@ -356,27 +356,27 @@ export default function WhatsAppSettings() {
                     <img src={qrData.qrCode} alt="QR Code" className="w-64 h-64" />
                   </div>
                   <p className="text-center text-sm text-muted-foreground">
-                    Buka WhatsApp → Perangkat Tertaut → Tautkan Perangkat, lalu scan QR ini.
-                    <br />QR refresh otomatis.
+                    Open WhatsApp → Linked Devices → Link a Device, then scan this QR.
+                    <br />QR refreshes automatically.
                   </p>
                 </div>
               ) : qrData?.pairingCode ? (
                 <div className="flex flex-col items-center gap-4">
                   <div className="bg-blue-50 dark:bg-blue-950 border-2 border-blue-500 rounded-lg px-8 py-6 text-center">
-                    <p className="text-xs text-muted-foreground mb-2">Kode Pairing</p>
+                    <p className="text-xs text-muted-foreground mb-2">Pairing Code</p>
                     <p className="text-4xl font-mono font-bold text-blue-600 dark:text-blue-400 tracking-[0.3em]">
                       {qrData.pairingCode}
                     </p>
                   </div>
                   <p className="text-center text-sm text-muted-foreground">
-                    Buka WhatsApp → Perangkat Tertaut → Tautkan dengan nomor telepon →
-                    masukkan kode di atas.
+                    Open WhatsApp → Linked Devices → Link with phone number →
+                    enter the code above.
                   </p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin mb-4" />
-                  <p className="text-sm text-muted-foreground">Menyiapkan koneksi...</p>
+                  <p className="text-sm text-muted-foreground">Preparing connection...</p>
                 </div>
               )}
 

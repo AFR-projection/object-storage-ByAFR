@@ -40,7 +40,7 @@ export async function handleIncomingMessage(from: string, text: string) {
     .limit(1);
 
   if (existingOtp) {
-    return "OTP sudah dikirim ke nomor ini. Silakan cek WhatsApp Anda.";
+    return "An OTP has already been sent to this number. Please check your WhatsApp.";
   }
 
   // Generate and send OTP
@@ -53,6 +53,6 @@ export async function handleIncomingMessage(from: string, text: string) {
     expiresAt,
   });
 
-  const msg = `Kode OTP Anda adalah:\n\n${code}\n\nKode berlaku selama ${OTP_EXPIRY_MINUTES} menit.\nJangan berikan kode ini kepada siapa pun.`;
+  const msg = `Your OTP code is:\n\n${code}\n\nThis code is valid for ${OTP_EXPIRY_MINUTES} minutes.\nDo not share this code with anyone.`;
   return msg;
 }

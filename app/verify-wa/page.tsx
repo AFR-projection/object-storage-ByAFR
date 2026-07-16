@@ -88,7 +88,7 @@ function VerifyWAContent() {
       });
 
       if (!res.success) {
-        setError(res.error ?? "Gagal mengirim ulang OTP");
+        setError(res.error ?? "Failed to resend OTP");
         setWaitTimer(0);
       }
     } catch {
@@ -117,7 +117,7 @@ function VerifyWAContent() {
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent shadow-lg shadow-accent/20">
               <MessageCircle className="h-8 w-8 text-white" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-gradient">Verifikasi WhatsApp</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-gradient">WhatsApp Verification</h1>
             <p className="mt-2 text-sm text-muted-foreground/80">{phoneNumber}</p>
           </div>
 
@@ -129,7 +129,7 @@ function VerifyWAContent() {
             >
               <div className="rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-4">
                 <p className="text-sm text-blue-900 dark:text-blue-100">
-                  📱 Cek WhatsApp Anda dan balas pesan dari Storage ByAFR dengan mengetik:
+                  📱 Check your WhatsApp and reply to the message from Storage ByAFR by typing:
                 </p>
                 <p className="text-lg font-bold text-blue-600 dark:text-blue-400 mt-2">SAVE</p>
               </div>
@@ -137,7 +137,7 @@ function VerifyWAContent() {
                 <Loader2 className="h-8 w-8 animate-spin text-accent" />
               </div>
               <p className="text-center text-sm text-muted-foreground">
-                Menunggu konfirmasi Anda...
+                Waiting for your confirmation...
               </p>
             </motion.div>
           )}
@@ -152,15 +152,15 @@ function VerifyWAContent() {
               <div className="rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 p-4">
                 <div className="flex items-center gap-2 text-green-900 dark:text-green-100">
                   <CheckCircle2 className="h-5 w-5" />
-                  <p className="text-sm font-medium">Konfirmasi diterima! ✓</p>
+                  <p className="text-sm font-medium">Confirmation received! ✓</p>
                 </div>
                 <p className="text-sm text-green-700 dark:text-green-200 mt-2">
-                  Masukkan kode OTP yang telah dikirim ke WhatsApp Anda
+                  Enter the OTP code that was sent to your WhatsApp
                 </p>
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium">Kode OTP</label>
+                <label className="mb-1.5 block text-sm font-medium">OTP Code</label>
                 <Input
                   type="text"
                   placeholder="000000"
@@ -171,7 +171,7 @@ function VerifyWAContent() {
                   disabled={step === "verifying"}
                   autoFocus
                 />
-                <p className="mt-1 text-xs text-muted-foreground">Kode berlaku 5 menit</p>
+                <p className="mt-1 text-xs text-muted-foreground">Code is valid for 5 minutes</p>
               </div>
 
               {error && (
@@ -186,12 +186,12 @@ function VerifyWAContent() {
                 {step === "verifying" ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 ) : (
-                  "Verifikasi"
+                  "Verify"
                 )}
               </Button>
 
               <div className="text-center">
-                <p className="text-xs text-muted-foreground">Tidak menerima kode?</p>
+                <p className="text-xs text-muted-foreground">Didn't receive the code?</p>
                 <Button
                   type="button"
                   variant="ghost"
@@ -200,7 +200,7 @@ function VerifyWAContent() {
                   disabled={waitTimer > 0 || loading}
                   className="text-accent hover:text-accent/80"
                 >
-                  {waitTimer > 0 ? `Tunggu ${waitTimer}s` : "Kirim Ulang"}
+                  {waitTimer > 0 ? `Wait ${waitTimer}s` : "Resend"}
                 </Button>
               </div>
             </motion.form>

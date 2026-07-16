@@ -51,12 +51,12 @@ export default function RegisterPage() {
     setError("");
 
     if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
-      setError("Username hanya boleh huruf, angka, titik, underscore, dan strip (tanpa spasi)");
+      setError("Username may only contain letters, numbers, dot, underscore, and hyphen (no spaces)");
       return;
     }
     const cleanPhone = phoneNumber.replace(/\D/g, "");
     if (cleanPhone.length < 10) {
-      setError("Nomor WhatsApp tidak valid (min 10 digit, contoh: 628xxxxxxxxx)");
+      setError("Invalid WhatsApp number (min 10 digits, e.g. 628xxxxxxxxx)");
       return;
     }
 
@@ -120,13 +120,13 @@ export default function RegisterPage() {
                 className="h-11"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                Huruf, angka, titik, underscore, strip. Tanpa spasi.
+                Letters, numbers, dot, underscore, hyphen. No spaces.
               </p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium flex items-center gap-2">
                 <MessageCircle className="h-4 w-4" />
-                Nomor WhatsApp
+                WhatsApp Number
               </label>
               <Input
                 type="tel"
@@ -137,7 +137,7 @@ export default function RegisterPage() {
                 minLength={10}
                 className="h-11"
               />
-              <p className="mt-1 text-xs text-muted-foreground">Format: 62XXXXXXXXXX (tanpa +)</p>
+              <p className="mt-1 text-xs text-muted-foreground">Format: 62XXXXXXXXXX (without +)</p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium">Password</label>
@@ -171,7 +171,7 @@ export default function RegisterPage() {
             )}
 
             <Button type="submit" className="h-11 w-full" disabled={loading || !username || !phoneNumber || !password}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Lanjut"}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Continue"}
             </Button>
           </form>
 
