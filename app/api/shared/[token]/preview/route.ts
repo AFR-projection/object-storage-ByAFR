@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { shares, files } from "@/lib/db/schema";
 import { downloadFromR2Stream } from "@/lib/storage/r2";
@@ -18,7 +18,7 @@ export async function GET(
     const [file] = await db
       .select()
       .from(files)
-      .where(eq(files.id, share.fileId))
+      .where(and(eq(files.id, share.fileId), isNull(files.deletedAt)))
       .limit(1);
 
     if (!file) return apiError("File not found", 404);

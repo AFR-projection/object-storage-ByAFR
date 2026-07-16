@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { files } from "@/lib/db/schema";
@@ -7,9 +7,15 @@ import { requireAuth } from "@/lib/auth/session";
 import { getEffectiveUserId } from "@/lib/auth/permissions";
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { abortMultipartUpload, deleteR2Object } from "@/lib/storage/r2";
 
 const schema = z.object({
   fileId: z.string().uuid(),
+  multipart: z
+    .object({
+      uploadId: z.string().min(1).max(512),
+    })
+    .optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -18,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     const sessionUser = await requireAuth();
     const userId = getEffectiveUserId(sessionUser);
-    const { fileId } = schema.parse(await request.json());
+    const { fileId, multipart } = schema.parse(await request.json());
 
     const [file] = await db
       .select()
@@ -27,6 +33,15 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (!file) return apiError("File not found", 404);
+
+    // Abort in-flight multipart upload so R2 doesn't keep orphaned parts
+    if (multipart?.uploadId && file.r2Key && file.r2Key !== "pending") {
+      await abortMultipartUpload(file.r2Key, multipart.uploadId).catch(() => {});
+    }
+    // Clean up any partially-written single-PUT object
+    if (file.r2Key && file.r2Key !== "pending") {
+      await deleteR2Object(file.r2Key).catch(() => {});
+    }
 
     await db.delete(files).where(eq(files.id, fileId));
     return apiSuccess({ cancelled: true });

@@ -16,6 +16,7 @@ export interface UploadItem {
   speed: number;
   error?: string;
   fileId?: string;
+  uploadId?: string;
   retries: number;
   encrypted?: boolean;
 }
@@ -348,6 +349,7 @@ export class UploadQueue {
       }
 
       item.fileId = meta.fileId;
+      item.uploadId = meta.multipart?.uploadId;
       const signal = { aborted: false, xhrs: [] as XMLHttpRequest[] };
       this.abortSignals.set(item.id, signal);
 
@@ -495,6 +497,7 @@ export class UploadQueue {
       item.status = "queued";
       item.progress = 0;
       item.fileId = undefined;
+      item.uploadId = undefined;
       this.notify();
       return;
     }
@@ -516,7 +519,10 @@ export class UploadQueue {
         for (const xhr of signal.xhrs) xhr.abort();
       }
       if (item.fileId) {
-        apiPost("/api/upload/cancel", { fileId: item.fileId }).catch(() => {});
+        apiPost("/api/upload/cancel", {
+          fileId: item.fileId,
+          multipart: item.uploadId ? { uploadId: item.uploadId } : undefined,
+        }).catch(() => {});
       }
     }
     item.status = "cancelled";
@@ -539,6 +545,7 @@ export class UploadQueue {
     item.error = undefined;
     item.retries = 0;
     item.fileId = undefined;
+    item.uploadId = undefined;
     this.notify();
     void this.processNext();
   }

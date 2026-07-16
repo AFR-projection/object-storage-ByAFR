@@ -6,7 +6,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-RUN npm install tsx sharp drizzle-orm postgres @aws-sdk/client-s3 @neondatabase/serverless ioredis bullmq @node-rs/argon2
+RUN npm install tsx sharp drizzle-orm postgres @aws-sdk/client-s3 @neondatabase/serverless ioredis bullmq @node-rs/argon2 pdfjs-dist @napi-rs/canvas mammoth xlsx
 
 COPY lib ./lib
 COPY workers ./workers

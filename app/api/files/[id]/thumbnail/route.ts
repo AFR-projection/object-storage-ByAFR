@@ -46,10 +46,16 @@ export async function GET(
 
     const thumbKey = getThumbKey(file.id, size);
     const legacyKey = getLegacyThumbKey(file.id);
-    const keyToUse = file.thumbnailKey === legacyKey ? legacyKey : (file.thumbnailKey ?? thumbKey);
 
-    // Try thumbnail first, fallback to original image
-    const keysToTry = [keyToUse];
+    // Prefer the size-specific key, then whatever thumbnailKey points to
+    // (e.g. legacy .jpg or the default 300px), then the original image.
+    const keysToTry = [thumbKey];
+    if (file.thumbnailKey && !keysToTry.includes(file.thumbnailKey)) {
+      keysToTry.push(file.thumbnailKey);
+    }
+    if (file.thumbnailKey === legacyKey && !keysToTry.includes(legacyKey)) {
+      keysToTry.push(legacyKey);
+    }
     if (file.mimeType.startsWith("image/")) {
       keysToTry.push(file.r2Key);
     }
@@ -77,7 +83,12 @@ export async function GET(
         }
 
         const headers = new Headers();
-        headers.set("Content-Type", keyToUse.endsWith(".webp") ? "image/webp" : "image/jpeg");
+        const contentType = r2Key === file.r2Key
+          ? file.mimeType
+          : r2Key.endsWith(".webp")
+            ? "image/webp"
+            : "image/jpeg";
+        headers.set("Content-Type", contentType);
         headers.set("Content-Length", String(r2.contentLength ?? 0));
         headers.set("Cache-Control", "public, max-age=86400");
 

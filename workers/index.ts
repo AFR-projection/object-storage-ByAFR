@@ -6,6 +6,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { createHmac } from "crypto";
+import os from "os";
+import path from "path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../lib/db/schema";
@@ -17,6 +19,8 @@ import { Queue } from "bullmq";
 const execFileAsync = promisify(execFile);
 
 const THUMB_SIZES = [150, 300, 600, 1200];
+
+const tmpPath = (name: string) => path.join(os.tmpdir(), name);
 
 function getRedisConnection() {
   if (process.env.REDIS_DISABLED === "true") {
@@ -81,7 +85,7 @@ async function uploadToR2(key: string, body: Buffer, contentType: string) {
   );
 }
 
-async function generateImageThumbnails(fileId: string, buffer: Buffer) {
+async function generateImageThumbnails(fileId: string, buffer: Buffer): Promise<boolean> {
   const sizes = [150, 300, 600, 1200];
   const uploads: Promise<void>[] = [];
 
@@ -100,18 +104,20 @@ async function generateImageThumbnails(fileId: string, buffer: Buffer) {
   }
 
   await Promise.all(uploads);
+  return true;
 }
 
-async function generateVideoThumbnail(fileId: string, r2Key: string) {
+async function generateVideoThumbnail(fileId: string, r2Key: string): Promise<boolean> {
   const buffer = await downloadFromR2(r2Key);
   const fs = await import("fs/promises");
-  const tmpIn = `/tmp/${fileId}-input`;
+  const tmpIn = tmpPath(`${fileId}-input`);
   await fs.writeFile(tmpIn, buffer);
 
+  let generated300 = false;
   try {
     // Generate multiple sizes from video frame
     for (const size of THUMB_SIZES) {
-      const tmpOut = `/tmp/${fileId}-thumb-${size}.webp`;
+      const tmpOut = tmpPath(`${fileId}-thumb-${size}.webp`);
       try {
         await execFileAsync("ffmpeg", [
           "-i", tmpIn,
@@ -124,6 +130,7 @@ async function generateVideoThumbnail(fileId: string, r2Key: string) {
         // Convert to webp via sharp
         const webpBuffer = await sharp(thumbBuffer).webp({ quality: 80 }).toBuffer();
         await uploadToR2(`thumbnails/${fileId}_${size}.webp`, webpBuffer, "image/webp");
+        if (size === 300) generated300 = true;
       } catch {
         // If size fails, skip it
       } finally {
@@ -133,46 +140,22 @@ async function generateVideoThumbnail(fileId: string, r2Key: string) {
   } finally {
     await fs.unlink(tmpIn).catch(() => {});
   }
+  return generated300;
 }
 
-async function generatePdfThumbnail(fileId: string, r2Key: string) {
-  const buffer = await downloadFromR2(r2Key);
-  const fs = await import("fs/promises");
-  const tmpIn = `/tmp/${fileId}-input.pdf`;
-  const tmpOut = `/tmp/${fileId}-thumb.png`;
-  await fs.writeFile(tmpIn, buffer);
-
-  try {
-    // Use ffmpeg to extract first page of PDF as image
-    await execFileAsync("ffmpeg", [
-      "-i", tmpIn,
-      "-vframes", "1",
-      "-vf", "scale=600:-1",
-      "-y", tmpOut,
-    ]);
-    const thumbBuffer = await fs.readFile(tmpOut);
-
-    // Generate multiple sizes
-    for (const size of THUMB_SIZES) {
-      const webpBuffer = await sharp(thumbBuffer)
-        .resize(size, size, { fit: "cover", withoutEnlargement: true })
-        .webp({ quality: 80 })
-        .toBuffer();
-      await uploadToR2(`thumbnails/${fileId}_${size}.webp`, webpBuffer, "image/webp");
-    }
-  } catch {
-    // PDF thumbnail generation failed, skip
-  } finally {
-    await fs.unlink(tmpIn).catch(() => {});
-    await fs.unlink(tmpOut).catch(() => {});
-  }
+async function generatePdfThumbnail(fileId: string, r2Key: string): Promise<boolean> {
+  // ffmpeg cannot decode PDFs — real renderer lands with pdfjs (Phase 1).
+  // Return false so thumbnailKey is never set to a nonexistent object.
+  void fileId;
+  void r2Key;
+  return false;
 }
 
-async function generateAudioThumbnail(fileId: string, r2Key: string) {
+async function generateAudioThumbnail(fileId: string, r2Key: string): Promise<boolean> {
   const buffer = await downloadFromR2(r2Key);
   const fs = await import("fs/promises");
-  const tmpIn = `/tmp/${fileId}-input`;
-  const tmpOut = `/tmp/${fileId}-cover.jpg`;
+  const tmpIn = tmpPath(`${fileId}-input`);
+  const tmpOut = tmpPath(`${fileId}-cover.jpg`);
   await fs.writeFile(tmpIn, buffer);
 
   try {
@@ -222,27 +205,33 @@ async function generateAudioThumbnail(fileId: string, r2Key: string) {
     await fs.unlink(tmpIn).catch(() => {});
     await fs.unlink(tmpOut).catch(() => {});
   }
+  return true;
 }
 
 async function generateThumbnail(fileId: string, r2Key: string, mimeType: string) {
   if (r2Key.startsWith("notes/")) return;
 
   const thumbKey = `thumbnails/${fileId}_300.webp`;
+  let generated = false;
 
   if (mimeType.startsWith("image/") && mimeType !== "image/svg+xml") {
     const buffer = await downloadFromR2(r2Key);
-    await generateImageThumbnails(fileId, buffer);
+    generated = await generateImageThumbnails(fileId, buffer);
   } else if (mimeType.startsWith("video/")) {
-    await generateVideoThumbnail(fileId, r2Key);
+    generated = await generateVideoThumbnail(fileId, r2Key);
   } else if (mimeType === "application/pdf") {
-    await generatePdfThumbnail(fileId, r2Key);
+    generated = await generatePdfThumbnail(fileId, r2Key);
   } else if (mimeType.startsWith("audio/")) {
-    await generateAudioThumbnail(fileId, r2Key);
+    generated = await generateAudioThumbnail(fileId, r2Key);
   } else {
     return;
   }
 
-  await db.update(files).set({ thumbnailKey: thumbKey }).where(eq(files.id, fileId));
+  // Only persist thumbnailKey when the 300px thumbnail actually exists,
+  // otherwise the UI would render a broken image for a dangling key.
+  if (generated) {
+    await db.update(files).set({ thumbnailKey: thumbKey }).where(eq(files.id, fileId));
+  }
 }
 
 async function compressImage(fileId: string, r2Key: string, mimeType: string) {
@@ -261,9 +250,9 @@ async function trimMedia(
 ) {
   const buffer = await downloadFromR2(r2Key);
   const fs = await import("fs/promises");
-  const tmpIn = `/tmp/${fileId}-trim-in`;
+  const tmpIn = tmpPath(`${fileId}-trim-in`);
   const ext = mimeType.includes("video") ? "mp4" : "mp3";
-  const tmpOut = `/tmp/${fileId}-trim-out.${ext}`;
+  const tmpOut = tmpPath(`${fileId}-trim-out.${ext}`);
   await fs.writeFile(tmpIn, buffer);
 
   try {
