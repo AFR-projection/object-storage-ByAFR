@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { whatsappSenders } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth/session";
@@ -21,8 +20,12 @@ export async function GET(request: NextRequest) {
 
     if (!sender) return apiError("Sender not found", 404);
 
-    const qrCode = (sender.sessionData as any)?.qrCode || null;
-    return apiSuccess({ qrCode, status: sender.status });
+    const data = (sender.sessionData as any) || {};
+    return apiSuccess({
+      qrCode: data.qrDataUrl ?? null,
+      pairingCode: data.pairingCode ?? null,
+      status: sender.status,
+    });
   } catch (error) {
     return handleApiError(error);
   }

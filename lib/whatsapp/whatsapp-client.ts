@@ -2,43 +2,72 @@ import { Boom } from "@hapi/boom";
 import {
   default as makeWASocket,
   useMultiFileAuthState,
+  fetchLatestBaileysVersion,
   DisconnectReason,
   isJidBroadcast,
 } from "baileys";
+import QRCode from "qrcode";
 import { db } from "@/lib/db";
 import { whatsappSenders } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { mkdir } from "fs/promises";
+import { mkdir, rm } from "fs/promises";
 import path from "path";
-import QRCode from "qrcode";
+
+type WAStatus = "connecting" | "connected" | "disconnected" | "error";
 
 export interface WAInstance {
   id: string;
   phoneNumber: string;
   socket: ReturnType<typeof makeWASocket> | null;
-  status: "connecting" | "connected" | "disconnected" | "error";
+  status: WAStatus;
+  qrDataUrl: string | null;
+  pairingCode: string | null;
 }
 
 const instances = new Map<string, WAInstance>();
 
-export async function initWAClient(senderId: string, phoneNumber: string) {
-  if (instances.has(senderId)) {
-    const instance = instances.get(senderId)!;
-    if (instance.status === "connected") return instance;
-    if (instance.socket) instance.socket.end(new Error("Manual disconnect"));
+function sessionDir(senderId: string) {
+  return path.join(process.cwd(), "wa-sessions", senderId);
+}
+
+/**
+ * Initialize a WhatsApp client.
+ * @param usePairingCode when true, request an 8-digit pairing code for phoneNumber
+ *        instead of a QR string (works headless without scanning).
+ */
+export async function initWAClient(
+  senderId: string,
+  phoneNumber: string,
+  usePairingCode = false
+): Promise<WAInstance> {
+  // Tear down any existing socket for this sender first.
+  const existing = instances.get(senderId);
+  if (existing?.socket) {
+    try {
+      existing.socket.ev.removeAllListeners("connection.update");
+      existing.socket.end(undefined);
+    } catch {
+      /* ignore */
+    }
   }
 
-  const sessionPath = path.join(process.cwd(), "wa-sessions", senderId);
-  await mkdir(sessionPath, { recursive: true });
+  const dir = sessionDir(senderId);
+  await mkdir(dir, { recursive: true });
 
-  const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+  const { state, saveCreds } = await useMultiFileAuthState(dir);
+
+  // Fetching the latest WhatsApp Web version is REQUIRED — a stale version makes
+  // WhatsApp reject the connection with 405 before any QR/pairing code is emitted.
+  const { version } = await fetchLatestBaileysVersion();
 
   const socket = makeWASocket({
+    version,
     auth: state,
     printQRInTerminal: false,
-    browser: ["Ubuntu", "Chrome", "20.0.04"],
+    browser: ["Storage ByAFR", "Chrome", "121.0.0"],
     markOnlineOnConnect: true,
     keepAliveIntervalMs: 30_000,
+    qrTimeout: usePairingCode ? undefined : 60_000,
   });
 
   const instance: WAInstance = {
@@ -46,36 +75,81 @@ export async function initWAClient(senderId: string, phoneNumber: string) {
     phoneNumber,
     socket,
     status: "connecting",
+    qrDataUrl: null,
+    pairingCode: null,
   };
+  instances.set(senderId, instance);
+
+  socket.ev.on("creds.update", saveCreds);
+
+  const wantsPairing = usePairingCode && !state.creds.registered;
+  let pairingRequested = false;
+
+  async function requestPairing() {
+    if (pairingRequested) return;
+    pairingRequested = true;
+    try {
+      const cleanPhone = phoneNumber.replace(/\D/g, "");
+      const code = await socket.requestPairingCode(cleanPhone);
+      instance.pairingCode = code;
+      await db
+        .update(whatsappSenders)
+        .set({
+          status: "connecting",
+          sessionData: { pairingCode: code, generatedAt: Date.now() } as any,
+          errorMessage: null,
+        })
+        .where(eq(whatsappSenders.id, senderId));
+      console.log(`[WA] Pairing code for ${cleanPhone}: ${code}`);
+    } catch (err) {
+      pairingRequested = false;
+      console.error(`[WA] requestPairingCode failed:`, err);
+      instance.status = "error";
+      await db
+        .update(whatsappSenders)
+        .set({ status: "error", errorMessage: String(err).slice(0, 300) })
+        .where(eq(whatsappSenders.id, senderId));
+    }
+  }
 
   socket.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr) {
+    // requestPairingCode needs the websocket to be open. The first
+    // "connecting" update fires right after ws open — request it then.
+    if (wantsPairing && connection === "connecting") {
+      // small tick to ensure ws.isOpen is true before sending the node
+      setTimeout(requestPairing, 1500);
+    }
+
+    if (qr && !usePairingCode) {
       try {
         const qrDataUrl = await QRCode.toDataURL(qr);
-        const sessionData = { qrCode: qrDataUrl, generatedAt: Date.now() };
+        instance.qrDataUrl = qrDataUrl;
         await db
           .update(whatsappSenders)
           .set({
             status: "connecting",
-            sessionData: sessionData as any,
+            sessionData: { qrDataUrl, generatedAt: Date.now() } as any,
             errorMessage: null,
           })
           .where(eq(whatsappSenders.id, senderId));
-        console.log(`[WA] QR generated for ${phoneNumber}`);
+        console.log(`[WA] QR ready for ${phoneNumber}`);
       } catch (err) {
-        console.error(`[WA] QR generation error:`, err);
+        console.error(`[WA] QR encode error:`, err);
       }
     }
 
     if (connection === "open") {
       instance.status = "connected";
+      instance.qrDataUrl = null;
+      instance.pairingCode = null;
       await db
         .update(whatsappSenders)
         .set({
           status: "connected",
           lastConnectedAt: new Date(),
+          sessionData: null,
           errorMessage: null,
         })
         .where(eq(whatsappSenders.id, senderId));
@@ -83,49 +157,54 @@ export async function initWAClient(senderId: string, phoneNumber: string) {
     }
 
     if (connection === "close") {
-      instance.status = "disconnected";
-      const shouldReconnect =
-        (lastDisconnect?.error as Boom)?.output?.statusCode !==
-        DisconnectReason.loggedOut;
+      const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+      const loggedOut = statusCode === DisconnectReason.loggedOut;
 
-      if (shouldReconnect) {
+      if (loggedOut) {
+        instance.status = "disconnected";
+        instances.delete(senderId);
+        await rm(sessionDir(senderId), { recursive: true, force: true }).catch(() => {});
         await db
           .update(whatsappSenders)
-          .set({ status: "disconnected" })
-          .where(eq(whatsappSenders.id, senderId));
-        setTimeout(() => initWAClient(senderId, phoneNumber), 5000);
-      } else {
-        await db
-          .update(whatsappSenders)
-          .set({ status: "disconnected", isActive: false })
+          .set({ status: "disconnected", isActive: false, sessionData: null })
           .where(eq(whatsappSenders.id, senderId));
         console.log(`[WA] Logged out: ${phoneNumber}`);
+        return;
       }
+
+      // Restart required (e.g. after pairing) or transient network drop → reconnect.
+      instance.status = "connecting";
+      await db
+        .update(whatsappSenders)
+        .set({ status: "connecting" })
+        .where(eq(whatsappSenders.id, senderId));
+      setTimeout(() => {
+        // On reconnect the creds are usually registered, so use normal (no pairing) flow.
+        initWAClient(senderId, phoneNumber, false).catch((e) =>
+          console.error(`[WA] reconnect failed:`, e)
+        );
+      }, 3000);
     }
   });
-
-  socket.ev.on("creds.update", saveCreds);
 
   socket.ev.on("messages.upsert", async ({ messages }) => {
     try {
       const { handleIncomingMessage } = await import("./message-handler");
       for (const msg of messages) {
-        if (!msg.message || msg.key.fromMe || isJidBroadcast(msg.key.remoteJid!))
+        if (!msg.message || msg.key.fromMe || isJidBroadcast(msg.key.remoteJid ?? ""))
           continue;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
-        if (!text) continue;
-        const from = msg.key.remoteJid!.split("@")[0];
+        const text =
+          msg.message.conversation || msg.message.extendedTextMessage?.text;
+        if (!text || !msg.key.remoteJid) continue;
+        const from = msg.key.remoteJid.split("@")[0];
         const reply = await handleIncomingMessage(from, text);
-        if (reply) {
-          await sendMessage(senderId, from, reply);
-        }
+        if (reply) await sendMessage(senderId, from, reply);
       }
     } catch (err) {
-      console.error(`[WA] Message handler error:`, err);
+      console.error(`[WA] message handler error:`, err);
     }
   });
 
-  instances.set(senderId, instance);
   return instance;
 }
 
@@ -143,25 +222,31 @@ export async function sendMessage(
   message: string
 ): Promise<boolean> {
   const instance = instances.get(senderId);
-  if (!instance || !instance.socket || instance.status !== "connected") {
-    return false;
-  }
+  if (!instance?.socket || instance.status !== "connected") return false;
 
   try {
-    const jid = phoneNumber.includes("@") ? phoneNumber : `${phoneNumber}@s.whatsapp.net`;
+    const clean = phoneNumber.replace(/\D/g, "");
+    const jid = phoneNumber.includes("@") ? phoneNumber : `${clean}@s.whatsapp.net`;
     await instance.socket.sendMessage(jid, { text: message });
     return true;
   } catch (err) {
-    console.error(`[WA] Send message error (${phoneNumber}):`, err);
+    console.error(`[WA] send error (${phoneNumber}):`, err);
     return false;
   }
 }
 
-export async function disconnectWAClient(senderId: string) {
+export async function disconnectWAClient(senderId: string, wipeSession = false) {
   const instance = instances.get(senderId);
   if (instance?.socket) {
-    instance.socket.end(new Error("Admin disconnect"));
-    instance.status = "disconnected";
-    instances.delete(senderId);
+    try {
+      instance.socket.ev.removeAllListeners("connection.update");
+      instance.socket.end(undefined);
+    } catch {
+      /* ignore */
+    }
+  }
+  instances.delete(senderId);
+  if (wipeSession) {
+    await rm(sessionDir(senderId), { recursive: true, force: true }).catch(() => {});
   }
 }

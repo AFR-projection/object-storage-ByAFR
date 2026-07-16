@@ -5,11 +5,12 @@ import { whatsappSenders } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth/session";
 import { apiError, apiSuccess, handleApiError } from "@/lib/api/response";
 import { z } from "zod";
-import { initWAClient, getWAInstance, disconnectWAClient } from "@/lib/whatsapp/whatsapp-client";
+import { initWAClient, disconnectWAClient } from "@/lib/whatsapp/whatsapp-client";
 
 const createSenderSchema = z.object({
-  phoneNumber: z.string().min(10).max(15),
+  phoneNumber: z.string().min(8).max(20),
   displayName: z.string().min(1).max(100),
+  method: z.enum(["qr", "pairing"]).default("qr"),
 });
 
 const updateSenderSchema = z.object({
@@ -18,7 +19,7 @@ const updateSenderSchema = z.object({
   priority: z.number().optional(),
 });
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const sessionUser = await requireAuth();
     if (sessionUser.role !== "master") return apiError("Forbidden", 403);
@@ -38,16 +39,22 @@ export async function POST(request: NextRequest) {
     const body = createSenderSchema.parse(await request.json());
     const cleanPhone = body.phoneNumber.replace(/\D/g, "");
 
+    // Pairing mode needs a valid phone number with country code.
+    if (body.method === "pairing" && cleanPhone.length < 10) {
+      return apiError("Nomor WhatsApp tidak valid untuk pairing (min 10 digit dengan kode negara)", 400);
+    }
+
     const [sender] = await db
       .insert(whatsappSenders)
-      .values({
-        phoneNumber: cleanPhone,
-        displayName: body.displayName,
-      })
+      .values({ phoneNumber: cleanPhone, displayName: body.displayName })
       .returning();
 
-    await initWAClient(sender.id, cleanPhone);
-    return apiSuccess(sender, 201);
+    // Kick off connection (async — QR/pairing code lands via polling).
+    initWAClient(sender.id, cleanPhone, body.method === "pairing").catch((e) =>
+      console.error(`[WA] init failed for ${sender.id}:`, e)
+    );
+
+    return apiSuccess({ ...sender, method: body.method }, 201);
   } catch (error) {
     return handleApiError(error);
   }
@@ -81,7 +88,7 @@ export async function DELETE(request: NextRequest) {
 
     const { id } = z.object({ id: z.string().uuid() }).parse(await request.json());
 
-    disconnectWAClient(id);
+    await disconnectWAClient(id, true);
     await db.delete(whatsappSenders).where(eq(whatsappSenders.id, id));
     return apiSuccess({ deleted: true });
   } catch (error) {

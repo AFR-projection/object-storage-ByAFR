@@ -12,7 +12,12 @@ export async function POST(request: NextRequest) {
     const sessionUser = await requireAuth();
     if (sessionUser.role !== "master") return apiError("Forbidden", 403);
 
-    const { id } = z.object({ id: z.string().uuid() }).parse(await request.json());
+    const { id, method } = z
+      .object({
+        id: z.string().uuid(),
+        method: z.enum(["qr", "pairing"]).default("qr"),
+      })
+      .parse(await request.json());
 
     const [sender] = await db
       .select()
@@ -21,8 +26,11 @@ export async function POST(request: NextRequest) {
 
     if (!sender) return apiError("Sender not found", 404);
 
-    disconnectWAClient(id);
-    await initWAClient(id, sender.phoneNumber);
+    // Wipe the old (possibly stale) session and start fresh so QR/pairing regenerates.
+    await disconnectWAClient(id, true);
+    initWAClient(id, sender.phoneNumber, method === "pairing").catch((e) =>
+      console.error(`[WA] reconnect init failed:`, e)
+    );
 
     return apiSuccess({ reconnecting: true });
   } catch (error) {
