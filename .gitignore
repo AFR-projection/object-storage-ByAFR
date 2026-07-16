@@ -11,3 +11,6 @@ out/
 *.log
 .DS_Store
 Thumbs.db
+
+# WhatsApp session credentials - never commit
+wa-sessions/
