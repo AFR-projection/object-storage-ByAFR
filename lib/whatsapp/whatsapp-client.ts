@@ -8,6 +8,8 @@ import {
 import { db } from "@/lib/db";
 import { whatsappSenders } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { mkdir } from "fs/promises";
+import path from "path";
 
 export interface WAInstance {
   id: string;
@@ -25,9 +27,10 @@ export async function initWAClient(senderId: string, phoneNumber: string) {
     if (instance.socket) instance.socket.end(new Error("Manual disconnect"));
   }
 
-  const { state, saveCreds } = await useMultiFileAuthState(
-    `./wa-sessions/${senderId}`
-  );
+  const sessionPath = path.join(process.cwd(), "wa-sessions", senderId);
+  await mkdir(sessionPath, { recursive: true });
+
+  const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
   const socket = makeWASocket({
     auth: state,
