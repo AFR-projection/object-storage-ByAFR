@@ -10,6 +10,7 @@ import { whatsappSenders } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { mkdir } from "fs/promises";
 import path from "path";
+import QRCode from "qrcode";
 
 export interface WAInstance {
   id: string;
@@ -51,11 +52,21 @@ export async function initWAClient(senderId: string, phoneNumber: string) {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log(`[WA] QR Code ready for ${phoneNumber}, scan to login`);
-      await db
-        .update(whatsappSenders)
-        .set({ status: "connecting" })
-        .where(eq(whatsappSenders.id, senderId));
+      try {
+        const qrDataUrl = await QRCode.toDataURL(qr);
+        const sessionData = { qrCode: qrDataUrl, generatedAt: Date.now() };
+        await db
+          .update(whatsappSenders)
+          .set({
+            status: "connecting",
+            sessionData: sessionData as any,
+            errorMessage: null,
+          })
+          .where(eq(whatsappSenders.id, senderId));
+        console.log(`[WA] QR generated for ${phoneNumber}`);
+      } catch (err) {
+        console.error(`[WA] QR generation error:`, err);
+      }
     }
 
     if (connection === "open") {
