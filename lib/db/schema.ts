@@ -15,6 +15,7 @@ import { relations } from "drizzle-orm";
 
 export const userRoleEnum = pgEnum("user_role", ["master", "user"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "suspended"]);
+export const waStatusEnum = pgEnum("wa_status", ["connecting", "connected", "disconnected", "error"]);
 export const sharePermissionEnum = pgEnum("share_permission", ["view", "edit"]);
 export const activityActionEnum = pgEnum("activity_action", [
   "login",
@@ -321,6 +322,45 @@ export const fileVersions = pgTable(
   ]
 );
 
+export const whatsappSenders = pgTable(
+  "whatsapp_senders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    phoneNumber: text("phone_number").notNull(),
+    displayName: text("display_name").notNull(),
+    status: waStatusEnum("status").notNull().default("disconnected"),
+    isActive: boolean("is_active").notNull().default(true),
+    sessionData: jsonb("session_data").$type<Record<string, unknown>>(),
+    lastConnectedAt: timestamp("last_connected_at", { withTimezone: true }),
+    errorMessage: text("error_message"),
+    priority: integer("priority").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("wa_senders_phone_unique").on(table.phoneNumber),
+    index("wa_senders_status_idx").on(table.status),
+    index("wa_senders_active_idx").on(table.isActive),
+  ]
+);
+
+export const otpTokens = pgTable(
+  "otp_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    phoneNumber: text("phone_number").notNull(),
+    code: text("code").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    verified: boolean("verified").notNull().default(false),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("otp_tokens_phone_idx").on(table.phoneNumber),
+    index("otp_tokens_expires_idx").on(table.expiresAt),
+  ]
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   folders: many(folders),
@@ -348,3 +388,5 @@ export type Session = typeof sessions.$inferSelect;
 export type Folder = typeof folders.$inferSelect;
 export type File = typeof files.$inferSelect;
 export type ActivityLog = typeof activityLogs.$inferSelect;
+export type WhatsappSender = typeof whatsappSenders.$inferSelect;
+export type OtpToken = typeof otpTokens.$inferSelect;
