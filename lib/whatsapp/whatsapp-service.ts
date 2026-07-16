@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { whatsappSenders, otpTokens } from "@/lib/db/schema";
-import { eq, and, gt, desc } from "drizzle-orm";
+import { eq, and, gt, lt, desc } from "drizzle-orm";
 import { sendMessage } from "./whatsapp-client";
 import { generateOTP, hashOTP } from "./otp-utils";
 
@@ -115,7 +115,5 @@ export async function getActiveSenders() {
 }
 
 export async function cleanupExpiredOTP() {
-  await db
-    .delete(otpTokens)
-    .where(gt(otpTokens.expiresAt, new Date().toISOString() as any));
+  await db.delete(otpTokens).where(lt(otpTokens.expiresAt, new Date()));
 }

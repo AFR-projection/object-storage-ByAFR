@@ -70,7 +70,10 @@ export async function POST(request: NextRequest) {
 
     if (!sent) {
       await db.delete(users).where(eq(users.id, user.id));
-      return apiError("Gagal mengirim pesan WhatsApp", 500);
+      return apiError(
+        "Gagal mengirim pesan WhatsApp. Pastikan nomor benar & sistem WhatsApp aktif.",
+        503
+      );
     }
 
     return apiSuccess({

@@ -49,13 +49,24 @@ export default function RegisterPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
+      setError("Username hanya boleh huruf, angka, titik, underscore, dan strip (tanpa spasi)");
+      return;
+    }
+    const cleanPhone = phoneNumber.replace(/\D/g, "");
+    if (cleanPhone.length < 10) {
+      setError("Nomor WhatsApp tidak valid (min 10 digit, contoh: 628xxxxxxxxx)");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await apiFetch("/api/auth/register-wa", {
         method: "POST",
         body: JSON.stringify({
           username,
-          phoneNumber,
+          phoneNumber: cleanPhone,
           password,
         }),
       });
@@ -63,7 +74,7 @@ export default function RegisterPage() {
         setError(res.error ?? "Registration failed");
         return;
       }
-      router.push(`/verify-wa?phone=${encodeURIComponent(phoneNumber)}`);
+      router.push(`/verify-wa?phone=${encodeURIComponent(cleanPhone)}`);
     } catch {
       setError("Connection failed");
     } finally {
@@ -108,6 +119,9 @@ export default function RegisterPage() {
                 minLength={3}
                 className="h-11"
               />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Huruf, angka, titik, underscore, strip. Tanpa spasi.
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium flex items-center gap-2">

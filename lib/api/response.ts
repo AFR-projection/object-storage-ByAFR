@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { AuthError } from "@/lib/auth/session";
 import { SECURITY_HEADERS } from "@/lib/security";
 
@@ -25,6 +26,14 @@ export function handleApiError(error: unknown) {
       ...(error.currentIp ? { currentIp: error.currentIp } : {}),
     });
   }
+  if (error instanceof ZodError) {
+    const first = error.issues[0];
+    const field = first?.path.join(".") || "input";
+    return apiError(`${field}: ${first?.message ?? "Invalid input"}`, 400, {
+      code: "VALIDATION_ERROR",
+    });
+  }
   console.error(error);
   return apiError("Internal server error", 500);
 }
+
