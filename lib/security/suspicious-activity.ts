@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { activityLogs } from "@/lib/db/schema";
+import { activityLogs, activityActionEnum } from "@/lib/db/schema";
 import { desc, eq, and, gte, count } from "drizzle-orm";
 
 export interface SuspiciousActivityResult {
@@ -125,7 +125,7 @@ export async function logSuspiciousActivity(
   try {
     await db.insert(activityLogs).values({
       userId,
-      action: action as any,
+      action: action as (typeof activityActionEnum.enumValues)[number],
       resourceType: "security",
       metadata: {
         suspicious: true,

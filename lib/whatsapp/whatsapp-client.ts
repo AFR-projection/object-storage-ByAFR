@@ -55,6 +55,9 @@ export async function initWAClient(
   const dir = sessionDir(senderId);
   await mkdir(dir, { recursive: true });
 
+  // useMultiFileAuthState is a Baileys utility, not a React hook — the
+  // react-hooks/rules-of-hooks match here is a false positive.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const { state, saveCreds } = await useMultiFileAuthState(dir);
 
   // Fetching the latest WhatsApp Web version is REQUIRED — a stale version makes
@@ -102,7 +105,7 @@ export async function initWAClient(
         .update(whatsappSenders)
         .set({
           status: "connecting",
-          sessionData: { pairingCode: code, generatedAt: Date.now() } as any,
+          sessionData: { pairingCode: code, generatedAt: Date.now() },
           errorMessage: null,
         })
         .where(eq(whatsappSenders.id, senderId));
@@ -136,7 +139,7 @@ export async function initWAClient(
           .update(whatsappSenders)
           .set({
             status: "connecting",
-            sessionData: { qrDataUrl, generatedAt: Date.now() } as any,
+            sessionData: { qrDataUrl, generatedAt: Date.now() },
             errorMessage: null,
           })
           .where(eq(whatsappSenders.id, senderId));

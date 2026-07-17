@@ -54,10 +54,6 @@ function VerifyWAContent() {
     }
   };
 
-  if (!phoneNumber) {
-    return null;
-  }
-
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -117,6 +113,12 @@ function VerifyWAContent() {
     const timer = setTimeout(() => setWaitTimer(waitTimer - 1), 1000);
     return () => clearTimeout(timer);
   }, [waitTimer]);
+
+  // Guard placed AFTER all hooks so hook order stays stable across renders
+  // (Rules of Hooks). Previously this early-return sat above a useEffect.
+  if (!phoneNumber) {
+    return null;
+  }
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background">
@@ -222,7 +224,7 @@ function VerifyWAContent() {
               </Button>
 
               <div className="text-center">
-                <p className="text-xs text-muted-foreground">Didn't receive the code?</p>
+                <p className="text-xs text-muted-foreground">Didn&apos;t receive the code?</p>
                 <Button
                   type="button"
                   variant="ghost"

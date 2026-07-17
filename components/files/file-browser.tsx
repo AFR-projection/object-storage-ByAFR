@@ -404,7 +404,12 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     path: string = ""
   ): Promise<{ file: File; relativePath: string }[]> {
     const results: { file: File; relativePath: string }[] = [];
-    for await (const [name, handle] of (dirHandle as any).entries()) {
+    const dirEntries = (
+      dirHandle as unknown as {
+        entries(): AsyncIterable<[string, FileSystemHandle]>;
+      }
+    ).entries();
+    for await (const [name, handle] of dirEntries) {
       const entryPath = path ? `${path}/${name}` : name;
       if (handle.kind === "file") {
         const fileHandle = handle as FileSystemFileHandle;
@@ -426,11 +431,15 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     // Try modern File System Access API first
     if (typeof window !== "undefined" && "showDirectoryPicker" in window) {
       try {
-        const dirHandle = await (window as any).showDirectoryPicker();
+        const dirHandle = await (
+          window as unknown as {
+            showDirectoryPicker(): Promise<FileSystemDirectoryHandle>;
+          }
+        ).showDirectoryPicker();
         rootFolderName = dirHandle.name;
         files = await readDirectoryRecursive(dirHandle);
-      } catch (err: any) {
-        if (err?.name === "AbortError") return; // User cancelled
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return; // User cancelled
         showError("Failed to read folder");
         return;
       }
@@ -449,7 +458,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
-    const entries = Array.from(fileList) as any[];
+    const entries = Array.from(fileList);
     const files: { file: File; relativePath: string }[] = [];
 
     for (const f of entries) {

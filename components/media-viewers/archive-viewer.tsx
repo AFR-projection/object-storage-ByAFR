@@ -353,7 +353,7 @@ export function ArchiveViewer({ fileName, mimeType, sizeBytes, fileId }: Archive
         {searchQuery ? (
           <div className="py-1">
             {filteredEntries.length === 0 ? (
-              <p className="text-xs text-muted-foreground/40 text-center py-8">No files match "{searchQuery}"</p>
+              <p className="text-xs text-muted-foreground/40 text-center py-8">No files match &quot;{searchQuery}&quot;</p>
             ) : (
               renderFileList(data?.entries ?? [])
             )}

@@ -46,7 +46,7 @@ export async function GET(
     } else if ("pipe" in r2.body && typeof r2.body.pipe === "function") {
       stream = new ReadableStream({
         start(controller) {
-          const nodeStream = r2.body as NodeJS.ReadableStream & { on: Function; pipe: Function };
+          const nodeStream = r2.body as NodeJS.ReadableStream;
           nodeStream.on("data", (chunk: Uint8Array) => controller.enqueue(chunk));
           nodeStream.on("end", () => controller.close());
           nodeStream.on("error", (err: Error) => controller.error(err));

@@ -39,7 +39,7 @@ export async function GET(
         if (done) break;
         chunks.push(value);
       }
-    } else if ("on" in r2.body && typeof (r2.body as any).on === "function") {
+    } else if ("on" in r2.body && typeof (r2.body as NodeJS.ReadableStream).on === "function") {
       const bufs: Buffer[] = [];
       for await (const chunk of r2.body as AsyncIterable<Buffer>) {
         bufs.push(chunk);
@@ -68,7 +68,10 @@ export async function GET(
 
     zip.forEach((path, entry) => {
       const isDir = entry.dir;
-      const raw = entry as any;
+      const raw = entry as typeof entry & {
+        uncompressedSize?: number;
+        compressedSize?: number;
+      };
       const size = isDir ? 0 : (raw.uncompressedSize ?? 0);
       const compressedSize = isDir ? 0 : (raw.compressedSize ?? 0);
       const name = path.split("/").pop() || path;

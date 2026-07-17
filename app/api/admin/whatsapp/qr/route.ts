@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     if (!sender) return apiError("Sender not found", 404);
 
-    const data = (sender.sessionData as any) || {};
+    const data = (sender.sessionData as { qrDataUrl?: string; pairingCode?: string } | null) || {};
     return apiSuccess({
       qrCode: data.qrDataUrl ?? null,
       pairingCode: data.pairingCode ?? null,

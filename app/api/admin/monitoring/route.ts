@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { desc, eq, and, gte, count, isNull, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { activityLogs, users, files } from "@/lib/db/schema";
+import { activityLogs, users, files, activityActionEnum } from "@/lib/db/schema";
 import { requireMaster } from "@/lib/auth/session";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
 
@@ -60,7 +60,10 @@ export async function POST(request: NextRequest) {
 
     const conditions = [];
     if (params.userId) conditions.push(eq(activityLogs.userId, params.userId));
-    if (params.action) conditions.push(eq(activityLogs.action, params.action as any));
+    if (params.action)
+      conditions.push(
+        eq(activityLogs.action, params.action as (typeof activityActionEnum.enumValues)[number])
+      );
 
     const logs = await db
       .select({

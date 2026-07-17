@@ -58,7 +58,7 @@ export async function GET(
         if (done) break;
         chunks.push(value);
       }
-    } else if ("on" in r2.body && typeof (r2.body as any).on === "function") {
+    } else if ("on" in r2.body && typeof (r2.body as NodeJS.ReadableStream).on === "function") {
       const bufs: Buffer[] = [];
       for await (const chunk of r2.body as AsyncIterable<Buffer>) {
         bufs.push(chunk);

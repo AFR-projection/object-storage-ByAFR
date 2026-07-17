@@ -14,6 +14,8 @@ const mode = process.argv[3] === "pairing" ? "pairing" : "qr";
 async function main() {
   const dir = "./wa-sessions/__test__";
   await rm(dir, { recursive: true, force: true }).catch(() => {});
+  // useMultiFileAuthState is a Baileys utility, not a React hook.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const { state, saveCreds } = await useMultiFileAuthState(dir);
 
   const { version, isLatest } = await fetchLatestBaileysVersion();
@@ -56,7 +58,7 @@ async function main() {
       process.exit(0);
     }
     if (connection === "close") {
-      console.log("[close]", (lastDisconnect?.error as any)?.output?.statusCode);
+      console.log("[close]", (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode);
     }
   });
 }
