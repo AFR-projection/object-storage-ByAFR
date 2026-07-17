@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { MotionConfig } from "framer-motion";
 import { SystemFeedback } from "@/components/system/system-feedback";
+import { EncryptedDownloadDialog } from "@/components/download/encrypted-download-dialog";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -22,6 +23,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <ThemeProvider>
           {children}
           <SystemFeedback />
+          <EncryptedDownloadDialog />
         </ThemeProvider>
       </MotionConfig>
     </QueryClientProvider>

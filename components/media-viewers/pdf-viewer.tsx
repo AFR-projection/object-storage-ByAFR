@@ -2,13 +2,15 @@
 
 import { Button } from "@/components/ui/button";
 import { Download, ExternalLink } from "lucide-react";
+import { downloadViewerSource } from "@/lib/download/download-actions";
 
 interface PdfViewerProps {
   fileId: string;
   previewUrl?: string;
+  fileName?: string;
 }
 
-export function PdfViewer({ fileId, previewUrl }: PdfViewerProps) {
+export function PdfViewer({ fileId, previewUrl, fileName }: PdfViewerProps) {
   const src = previewUrl ?? `/api/files/${fileId}/preview`;
 
   return (
@@ -17,7 +19,7 @@ export function PdfViewer({ fileId, previewUrl }: PdfViewerProps) {
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => window.open(src, "_blank")}>
           <ExternalLink className="h-3.5 w-3.5 mr-1" /> Tab baru
         </Button>
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => window.open(`/api/download/${fileId}`)}>
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => downloadViewerSource(src, fileId, fileName ?? "document.pdf")}>
           <Download className="h-3.5 w-3.5 mr-1" /> Download
         </Button>
       </div>

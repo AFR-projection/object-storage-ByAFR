@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { SystemToastViewport } from "./system-toast";
 import { ConnectionStatusPill } from "./connection-status";
 import { PageProgressBar } from "./page-progress";
+import { DownloadsWidget } from "@/components/download/downloads-widget";
 import { notify, setConnectionStatus } from "@/lib/system/notify-store";
 
 /** Global system feedback layer: progress, connection, toasts, online/offline. */
@@ -45,6 +46,7 @@ export function SystemFeedback() {
       <PageProgressBar />
       <ConnectionStatusPill />
       <SystemToastViewport />
+      <DownloadsWidget />
     </>
   );
 }

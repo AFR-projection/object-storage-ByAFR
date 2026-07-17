@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Spinner } from "@/components/system/spinner";
 import { init } from "pptx-preview";
 import { usePreviewSource } from "@/hooks/use-preview-source";
 import { Button } from "@/components/ui/button";
 import { Download, Presentation, RefreshCw } from "lucide-react";
+import { downloadViewerSource } from "@/lib/download/download-actions";
 
 interface PptxViewerProps {
   src: string;
@@ -64,7 +66,7 @@ export function PptxViewer({ src, fileName, fileId }: PptxViewerProps) {
     return (
       <div className="flex items-center justify-center h-full bg-card">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+          <Spinner size="lg" />
           <p className="text-xs text-muted-foreground">Memuat presentasi...</p>
         </div>
       </div>
@@ -80,7 +82,7 @@ export function PptxViewer({ src, fileName, fileId }: PptxViewerProps) {
           <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>
             <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Coba lagi
           </Button>
-          <Button size="sm" onClick={() => window.open(`/api/download/${fileId}`)}>
+          <Button size="sm" onClick={() => downloadViewerSource(src, fileId, fileName)}>
             <Download className="h-3.5 w-3.5 mr-1.5" /> Download
           </Button>
         </div>
@@ -95,7 +97,7 @@ export function PptxViewer({ src, fileName, fileId }: PptxViewerProps) {
           <Presentation className="h-3.5 w-3.5 text-orange-500 shrink-0" />
           <span className="text-xs text-muted-foreground truncate">{fileName}</span>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => window.open(`/api/download/${fileId}`)}>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => downloadViewerSource(src, fileId, fileName)}>
           <Download className="h-3.5 w-3.5" />
         </Button>
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Spinner } from "@/components/system/spinner";
 import { Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, Music } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -89,7 +90,7 @@ export function AudioViewer({ src, fileName }: AudioViewerProps) {
         <>
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+              <Spinner size="md" />
             </div>
           )}
           <div className="w-full max-w-md mb-8">

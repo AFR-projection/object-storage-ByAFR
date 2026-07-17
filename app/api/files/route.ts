@@ -18,6 +18,7 @@ import {
   deleteR2Object,
 } from "@/lib/storage/r2";
 import { validateCsrf, checkRateLimit } from "@/lib/security";
+import { tiptapToPlainText } from "@/lib/search/tiptap-text";
 import { cacheGet, cacheSet, cacheDelPattern } from "@/lib/cache/redis";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { recalculateUsedBytes } from "@/lib/db";
@@ -140,6 +141,8 @@ export async function POST(request: NextRequest) {
         sizeBytes: 0,
         r2Key: `notes/${userId}/${crypto.randomUUID()}`,
         isNote: true,
+        // Plaintext of the note body feeds the full-text search vector.
+        contentText: body.content ? tiptapToPlainText(body.content) : null,
       })
       .returning();
 

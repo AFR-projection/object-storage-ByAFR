@@ -4,22 +4,23 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { apiFetch } from "@/lib/api/client";
+import { TwoFactorSection } from "@/components/account/account-security-sections";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBytes, formatDate, cn } from "@/lib/utils";
 import { useState, use } from "react";
 import {
-  ArrowLeft, User, FileText, FolderOpen, Activity, Shield,
-  Clock, HardDrive, Star, Trash2, Edit, Save, X, KeyRound,
-  Upload, Download, LogIn, MoreHorizontal, Loader2, Check, Eye, EyeOff, AlertCircle,
+  ArrowLeft, FileText, Activity, Shield,
+  HardDrive, Star, Trash2, Edit, Save, X, KeyRound,
+  Upload, Download, LogIn, Loader2, Eye, EyeOff, AlertCircle,
 } from "lucide-react";
 
 interface UserDetail {
   user: {
     id: string;
     username: string;
-    email: string | null;
+    phone: string | null;
     role: string;
     status: string;
     quotaBytes: number;
@@ -84,24 +85,30 @@ export default function UserDetailPage({
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     username: "",
-    email: "",
+    phone: "",
     password: "",
     quotaGB: 10,
     bandwidthGB: 0,
     mustChangePassword: false,
   });
   const [saving, setSaving] = useState(false);
-  const [pwNew, setPwNew] = useState("");
-  const [pwConfirm, setPwConfirm] = useState("");
   const [showPwNew, setShowPwNew] = useState(false);
-  const [showPwConfirm, setShowPwConfirm] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [pwSaving, setPwSaving] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-user-detail", id],
     queryFn: async () => {
       const res = await apiFetch<UserDetail>(`/api/admin/users/${id}`);
+      return res.data;
+    },
+  });
+
+  // Who is logged in — used to show self-only controls (2FA) when a master
+  // views their own account.
+  const { data: sessionUser } = useQuery({
+    queryKey: ["session"],
+    queryFn: async () => {
+      const res = await apiFetch<{ id: string; role: string; totpEnabled?: boolean }>("/api/auth/login");
       return res.data;
     },
   });
@@ -123,13 +130,15 @@ export default function UserDetailPage({
 
   const { user, files, folders, activity, sessions, storageByType } = data;
   const storagePct = user.quotaBytes > 0 ? (user.usedBytes / user.quotaBytes) * 100 : 0;
+  // True when a master is viewing their own account — unlocks 2FA management.
+  const isOwnAccount = !!sessionUser && sessionUser.id === user.id;
 
   async function saveUser() {
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
         username: form.username || undefined,
-        email: form.email || undefined,
+        phone: form.phone || undefined,
         quotaBytes: form.quotaGB * 1073741824,
         bandwidthQuotaBytes: form.bandwidthGB * 1073741824,
         mustChangePassword: form.mustChangePassword,
@@ -147,37 +156,6 @@ export default function UserDetailPage({
       }
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function changePassword() {
-    setPwMsg(null);
-    if (pwNew.length < 8) {
-      setPwMsg({ type: "error", text: "Password must be at least 8 characters" });
-      return;
-    }
-    if (pwNew !== pwConfirm) {
-      setPwMsg({ type: "error", text: "Passwords do not match" });
-      return;
-    }
-    setPwSaving(true);
-    try {
-      const res = await apiFetch(`/api/admin/users/${user.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ password: pwNew }),
-      });
-      if (res.success) {
-        setPwMsg({ type: "success", text: "Password changed successfully" });
-        setPwNew("");
-        setPwConfirm("");
-        queryClient.invalidateQueries({ queryKey: ["admin-user-detail"] });
-      } else {
-        setPwMsg({ type: "error", text: res.error ?? "Failed to change password" });
-      }
-    } catch {
-      setPwMsg({ type: "error", text: "Connection failed" });
-    } finally {
-      setPwSaving(false);
     }
   }
 
@@ -199,7 +177,7 @@ export default function UserDetailPage({
         </Button>
         <div className="flex-1">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{user.username}</h1>
-          <p className="mt-1 text-sm text-muted-foreground/70">{user.email ?? "No email"}</p>
+          <p className="mt-1 text-sm text-muted-foreground/70">{user.phone ?? "No WhatsApp number"}</p>
         </div>
         <div className="flex items-center gap-2">
           <span
@@ -227,7 +205,7 @@ export default function UserDetailPage({
               } else {
                 setForm({
                   username: user.username,
-                  email: user.email ?? "",
+                  phone: user.phone ?? "",
                   password: "",
                   quotaGB: Math.round(user.quotaBytes / 1073741824),
                   bandwidthGB: Math.round((user.bandwidthQuotaBytes ?? 0) / 1073741824),
@@ -462,11 +440,12 @@ export default function UserDetailPage({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Edit className="h-4 w-4 text-muted-foreground" />
-                Edit User: {user.username}
+                Edit {isOwnAccount ? "your account" : user.username}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-5">
+                {/* Identity */}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-foreground/80">Username</label>
@@ -477,26 +456,22 @@ export default function UserDetailPage({
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-foreground/80">Email</label>
+                    <label className="mb-1.5 block text-sm font-medium text-foreground/80">WhatsApp number</label>
                     <Input
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      placeholder="Email (optional)"
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      placeholder="WhatsApp number (optional, e.g. 628xxx)"
                     />
                   </div>
+                </div>
+
+                {/* Limits */}
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-foreground/80">New Password (leave blank to keep current)</label>
-                    <Input
-                      type="password"
-                      value={form.password}
-                      onChange={(e) => setForm({ ...form, password: e.target.value })}
-                      placeholder="New password"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-foreground/80">Quota (GB)</label>
+                    <label className="mb-1.5 block text-sm font-medium text-foreground/80">Storage quota (GB)</label>
                     <Input
                       type="number"
+                      min={1}
                       value={form.quotaGB}
                       onChange={(e) => setForm({ ...form, quotaGB: parseInt(e.target.value) || 10 })}
                     />
@@ -511,6 +486,34 @@ export default function UserDetailPage({
                     />
                   </div>
                 </div>
+
+                {/* Password — single source of truth */}
+                <div className="rounded-xl border border-border/40 bg-muted/10 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Password</span>
+                  </div>
+                  <div className="relative">
+                    <Input
+                      type={showPwNew ? "text" : "password"}
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      placeholder="Leave blank to keep current password"
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPwNew(!showPwNew)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
+                    >
+                      {showPwNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {form.password && form.password.length < 8 && (
+                    <p className="text-xs text-orange-500">Use at least 8 characters.</p>
+                  )}
+                </div>
+
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -520,11 +523,18 @@ export default function UserDetailPage({
                   />
                   Force password reset on next login
                 </label>
+
+                {pwMsg && pwMsg.type === "error" && (
+                  <p className="flex items-center gap-2 text-sm text-danger">
+                    <AlertCircle className="h-4 w-4" /> {pwMsg.text}
+                  </p>
+                )}
+
                 <div className="flex justify-end gap-2">
                   <Button variant="secondary" onClick={() => setEditing(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={saveUser} disabled={saving}>
+                  <Button onClick={saveUser} disabled={saving || (!!form.password && form.password.length < 8)}>
                     {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}
                     Save Changes
                   </Button>
@@ -535,85 +545,28 @@ export default function UserDetailPage({
         </motion.div>
       )}
 
-      {/* Change Password */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.45 }}
-      >
-        <Card className="border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-muted-foreground" />
-              Change Password
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="relative">
-                <Input
-                  type={showPwNew ? "text" : "password"}
-                  placeholder="New password"
-                  value={pwNew}
-                  onChange={(e) => setPwNew(e.target.value)}
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPwNew(!showPwNew)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
-                >
-                  {showPwNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              <div className="relative">
-                <Input
-                  type={showPwConfirm ? "text" : "password"}
-                  placeholder="Confirm new password"
-                  value={pwConfirm}
-                  onChange={(e) => setPwConfirm(e.target.value)}
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPwConfirm(!showPwConfirm)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
-                >
-                  {showPwConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              {pwNew && (
-                <div className="flex gap-2 text-xs">
-                  <div className={cn("flex items-center gap-1", pwNew.length >= 8 ? "text-emerald-400" : "text-muted-foreground/50")}>
-                    <Check className="h-3 w-3" /> 8+ chars
-                  </div>
-                </div>
-              )}
-              {pwMsg && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={cn(
-                    "rounded-lg px-4 py-2 text-sm flex items-center gap-2",
-                    pwMsg.type === "success" ? "bg-emerald-500/10 text-emerald-400" : "bg-danger/10 text-danger"
-                  )}
-                >
-                  {pwMsg.type === "success" ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-                  {pwMsg.text}
-                </motion.div>
-              )}
-              <Button
-                onClick={changePassword}
-                disabled={pwSaving || !pwNew || !pwConfirm}
-                className="w-full"
-              >
-                {pwSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Change Password
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+      {/* Two-factor authentication — only when viewing your own account. Admins
+          cannot enable 2FA on someone else's account (it would let them lock the
+          owner out), so this control is self-service only. */}
+      {isOwnAccount && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+        >
+          <Card className="border-border/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-4 w-4 text-muted-foreground" />
+                Two-factor authentication
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TwoFactorSection enabled={!!sessionUser?.totpEnabled} />
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
     </div>
   );
 }

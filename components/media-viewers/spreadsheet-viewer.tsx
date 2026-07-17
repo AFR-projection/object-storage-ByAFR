@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { Spinner } from "@/components/system/spinner";
 import * as XLSX from "xlsx";
 import { usePreviewSource } from "@/hooks/use-preview-source";
 import { Button } from "@/components/ui/button";
-import { Download, RefreshCw, Table2, AlertTriangle } from "lucide-react";
+import { Download, Table2, AlertTriangle } from "lucide-react";
+import { downloadViewerSource } from "@/lib/download/download-actions";
 import { cn } from "@/lib/utils";
 
 interface SpreadsheetViewerProps {
@@ -59,7 +61,7 @@ export function SpreadsheetViewer({ src, fileName, fileId }: SpreadsheetViewerPr
     return (
       <div className="flex items-center justify-center h-full bg-card">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+          <Spinner size="lg" />
           <p className="text-xs text-muted-foreground">Memuat spreadsheet...</p>
         </div>
       </div>
@@ -70,7 +72,7 @@ export function SpreadsheetViewer({ src, fileName, fileId }: SpreadsheetViewerPr
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground bg-card gap-3">
         <p className="text-sm">{error ?? parseError}</p>
-        <Button variant="secondary" size="sm" onClick={() => window.open(`/api/download/${fileId}`)}>
+        <Button variant="secondary" size="sm" onClick={() => downloadViewerSource(src, fileId, fileName)}>
           <Download className="h-3.5 w-3.5 mr-1.5" /> Download
         </Button>
       </div>
@@ -100,7 +102,7 @@ export function SpreadsheetViewer({ src, fileName, fileId }: SpreadsheetViewerPr
             </span>
           )}
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => window.open(`/api/download/${fileId}`)}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => downloadViewerSource(src, fileId, fileName)}>
           <Download className="h-3.5 w-3.5" />
         </Button>
       </div>

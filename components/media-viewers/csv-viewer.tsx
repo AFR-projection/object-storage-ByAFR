@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { Spinner } from "@/components/system/spinner";
 import { Button } from "@/components/ui/button";
 import { Copy, Check, AlertTriangle, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -108,7 +109,7 @@ export function CsvViewer({ src, fileName }: CsvViewerProps) {
     return (
       <div className="flex items-center justify-center h-full bg-card">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+          <Spinner size="md" />
           <p className="text-xs text-muted-foreground">Memuat tabel...</p>
         </div>
       </div>

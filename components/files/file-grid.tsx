@@ -6,13 +6,14 @@ import { motion } from "framer-motion";
 import {
   FileText, Image, Film, Music, FileArchive, File,
   Star, Trash2, Copy, RotateCcw, Pencil, MoreHorizontal, Download,
-  Play, Share2, Check,
+  Play, Share2, Check, Lock,
   ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { cn, formatBytes, formatDate, getMimeCategory } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { FloatingActionMenu, useFloatingMenu, type FloatingMenuItem } from "@/components/ui/floating-action-menu";
 import type { File as FileRecord } from "@/lib/db/schema";
+import { Spinner } from "@/components/system/spinner";
 
 const ROW_HEIGHT = 56;
 const OVERSCAN = 8;
@@ -124,6 +125,7 @@ function buildFileMenuItems(
   }
   return [
     { id: "download", label: "Download", icon: Download, onClick: () => onAction("download", file) },
+    { id: "download-progress", label: "Download with progress", icon: Download, onClick: () => onAction("download-progress", file) },
     { id: "share", label: "Share", icon: Share2, onClick: () => onAction("share", file) },
     { id: "rename", label: "Rename", icon: Pencil, onClick: () => onAction("rename", file) },
     { id: "favorite", label: file.isFavorite ? "Unfavorite" : "Favorite", icon: Star, onClick: () => onAction("favorite", file) },
@@ -317,7 +319,7 @@ export function FileGrid({
           <div ref={lastItemRef} className="flex justify-center py-8">
             {loadingMore ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground/60">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+                <Spinner size="xs" />
                 Loading more...
               </div>
             ) : (
@@ -384,7 +386,7 @@ export function FileGrid({
               >
                 {loadingMore ? (
                   <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+                    <Spinner size="xs" />
                     Loading more...
                   </div>
                 ) : (
@@ -468,6 +470,18 @@ const GridCard = memo(function GridCard({
       {file.isFavorite && (
         <div className="absolute -top-1 -right-1 z-30 flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 shadow-md shadow-amber-400/20">
           <Star className="h-3 w-3 fill-white text-white" />
+        </div>
+      )}
+
+      {file.encrypted && (
+        <div
+          className={cn(
+            "absolute -top-1 z-30 flex h-6 w-6 items-center justify-center rounded-full bg-accent shadow-md shadow-accent/20",
+            file.isFavorite ? "-right-1 translate-x-[-1.6rem]" : "-right-1"
+          )}
+          title="Encrypted (AES-256)"
+        >
+          <Lock className="h-3 w-3 text-white" />
         </div>
       )}
 
@@ -560,6 +574,7 @@ const ListRow = memo(function ListRow({
           </span>
         </div>
         {file.isFavorite && <Star className="h-3 w-3 fill-amber-400 text-amber-400 shrink-0 hidden sm:block" />}
+        {file.encrypted && <Lock className="h-3 w-3 text-accent shrink-0 hidden sm:block" aria-label="Encrypted" />}
         {file.isNote && <span className="shrink-0 rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-medium text-accent hidden sm:block">Note</span>}
       </div>
 

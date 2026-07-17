@@ -7,7 +7,37 @@ Target: VPS Ubuntu fresh + domain → **`./install.sh`** → selesai dengan HTTP
 
 ---
 
-## Ringkasan (30 detik)
+## 🔁 Redeploy / update (baca ini dulu kalau udah pernah install)
+
+Udah pernah deploy dan cuma mau naikin fitur/fix terbaru? **Cukup 3 baris, ga ada langkah tambahan:**
+
+```bash
+cd /opt/storage-by-afr
+git pull          # ambil update terbaru dari GitHub
+./update.sh       # backup → validate → rebuild → migrate DB → health check
+```
+
+Atau lebih singkat lagi — `./update.sh` **otomatis `git pull` sendiri**, jadi bisa langsung:
+
+```bash
+cd /opt/storage-by-afr && ./update.sh
+```
+
+Itu aja. Script-nya ngurusin semuanya: backup `.env` + nginx, rebuild container, sinkron schema database, renew SSL, dan health check di akhir. Kalau ada yang gagal, dia berhenti dan kasih tau.
+
+**Syarat: push dulu ke GitHub.** `./update.sh` menarik kode dari repo, jadi commit + push perubahan lu dulu dari PC lokal sebelum jalanin di VPS.
+
+### Kenapa update DB selalu aman (ga perlu langkah manual)
+
+- Database (**Neon**) dan Redis itu **layanan eksternal** — VPS cuma nyambung ke sana, DB-nya sama persis dengan yang dipakai saat development.
+- `./update.sh` menyinkronkan schema via **`npm run db:push`** (bukan `drizzle-kit migrate`). `db:push` membandingkan `lib/db/schema.ts` langsung ke DB dan hanya menerapkan yang beda — kalau schema & DB udah cocok, dia **no-op** (ga ngapa-ngapain).
+- Perubahan schema yang sudah diterapkan ke Neon saat development (contoh: rename kolom, kolom enkripsi, index full-text) **sudah live** begitu VPS konek — jadi redeploy tinggal rebuild kode aplikasinya.
+
+> ⚠️ **Perhatian rename kolom.** `db:push` aman untuk nambah kolom/index. Tapi untuk **rename kolom**, terapkan dulu perubahannya ke Neon **sebelum** redeploy (biar `db:push` lihatnya sebagai "sudah cocok", bukan "drop kolom lama + bikin baru" yang menghapus data). Selama alurnya "apply ke Neon dulu → baru redeploy", data aman.
+
+---
+
+## Ringkasan install pertama (30 detik)
 
 ```bash
 ssh ubuntu@IP-VPS
@@ -172,10 +202,12 @@ Neon free tier kadang perlu allow IP VPS:
 | Command | Fungsi |
 |---------|--------|
 | `./install.sh` | Install pertama (wizard + deploy) |
-| `./deploy.sh` | Deploy ulang pakai `.env` existing |
-| `./update.sh` | Update aman (backup config, pull, rebuild, migrate) |
+| `./deploy.sh` | Deploy ulang pakai `.env` existing (tanpa `git pull`) |
+| `./update.sh` | **Redeploy/update** — git pull + backup + rebuild + migrate + health check |
 | `npm run deploy:logs` | Lihat log |
 | `npm run deploy:health` | Cek status service |
+
+> **`./update.sh` vs `./deploy.sh`:** pakai **`./update.sh`** untuk naikin versi (dia pull kode terbaru + backup + migrate). Pakai `./deploy.sh` kalau cuma mau rebuild dari kode yang sudah ada di VPS tanpa narik update.
 
 ---
 
@@ -260,6 +292,14 @@ Atau buat ulang dari wizard:
 
 - Update R2 CORS dengan domain HTTPS kamu
 - `NEXT_PUBLIC_APP_URL` harus match browser URL
+
+### File terenkripsi: download minta passphrase / tidak bisa masuk ZIP
+
+Ini **normal & disengaja**, bukan bug. File yang diupload dengan enkripsi itu **end-to-end** (dienkripsi di browser sebelum sampai ke server), jadi:
+
+- **Download** file terenkripsi akan memunculkan dialog passphrase dulu, lalu didekripsi di browser dan disimpan sebagai file asli. Passphrase **tidak pernah** dikirim ke server.
+- **ZIP / batch download** menolak file terenkripsi — server tidak memegang passphrase sehingga tidak bisa memasukkan file aslinya ke arsip. Download file terenkripsi satu per satu.
+- Kalau passphrase hilang, file **tidak bisa** dipulihkan oleh siapa pun (termasuk admin) — itu memang inti dari enkripsi E2E.
 
 ### Worker FAIL di health check
 

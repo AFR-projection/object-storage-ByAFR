@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.email, cleanPhone))
+      .where(eq(users.phone, cleanPhone))
       .limit(1);
 
     if (!user) return apiError("User not found", 404);

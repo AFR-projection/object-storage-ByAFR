@@ -5,10 +5,9 @@ import { sendCustomMessage } from "./whatsapp-service";
 import { loginAlert, passwordChanged, accountLocked } from "./templates";
 
 /**
- * WhatsApp acts as this app's email replacement, so account/security events are
- * pushed to the user's registered number. WA-registered users store their phone
- * number in users.email; a value that isn't all-digits (a real email address)
- * is skipped rather than misdelivered.
+ * WhatsApp is this app's primary contact channel, so account/security events are
+ * pushed to the user's registered number in users.phone. A value that isn't all
+ * digits (e.g. a legacy real email) is skipped rather than misdelivered.
  */
 
 /** Format an instant as a readable WIB (Asia/Jakarta) timestamp. */
@@ -21,11 +20,11 @@ function formatTime(date: Date): string {
 }
 
 /** Return the deliverable phone number for a user, or null if not WA-reachable. */
-function phoneOf(emailOrPhone: string | null): string | null {
-  if (!emailOrPhone) return null;
-  const digits = emailOrPhone.replace(/\D/g, "");
-  // A stored email address contains letters; only pure-digit values are numbers.
-  if (digits.length < 10 || /[a-zA-Z@]/.test(emailOrPhone)) return null;
+function phoneOf(value: string | null): string | null {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, "");
+  // Only pure-digit values are numbers; anything with letters is not a phone.
+  if (digits.length < 10 || /[a-zA-Z@]/.test(value)) return null;
   return digits;
 }
 
@@ -42,12 +41,12 @@ type NotifyEvent =
 export async function notifyUser(userId: string, event: NotifyEvent): Promise<void> {
   try {
     const [user] = await db
-      .select({ email: users.email })
+      .select({ phone: users.phone })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
 
-    const phone = phoneOf(user?.email ?? null);
+    const phone = phoneOf(user?.phone ?? null);
     if (!phone) return;
 
     let message: string;

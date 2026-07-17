@@ -8,6 +8,20 @@
       "when": 1784218379142,
       "tag": "0000_smiling_frog_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784300819411,
+      "tag": "0001_fts_search_vector",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784315779000,
+      "tag": "0002_rename_email_to_phone",
+      "breakpoints": true
     }
   ]
 }

@@ -21,11 +21,12 @@ Built with **Next.js 16**, **Drizzle ORM**, **Cloudflare R2**, and **Redis**.
 - **Share Links** — Create shareable links with expiration, access limits, permissions (view/edit), and full access logging (IP, device, browser, OS, location)
 - **Recycle Bin** — Soft-delete with time grouping (Today / Yesterday / This Week / This Month / Older), batch restore and permanent delete
 - **Favorites** — Bookmark files for quick access
-- **Search** — Full-text search across all files
+- **Search** — Full-text search across all files (PostgreSQL FTS with ranked results + `websearch` query syntax)
+- **End-to-end encryption** — Optional client-side AES-GCM encryption on upload; files are stored as ciphertext (server never sees the passphrase). Download prompts for the passphrase, decrypts in-browser, and saves the original file. ZIP/batch excludes encrypted files by design.
 - **Admin Panel** — User management, impersonation, Shares Center, storage analytics (30d growth + MIME charts), real-time monitoring, activity logs
 - **Enterprise security** — TOTP 2FA + recovery codes, forced password reset (`mustChangePassword`), stronger password policy (min 10, 3 character classes), account suspension with reason, session management
 - **Platform APIs** — API keys, webhooks, folder collaboration, file versions, bandwidth quotas, client-side encryption hooks
-- **Realtime feedback** — SSE live events, connection status, system toasts, page progress
+- **Realtime feedback** — SSE live events, animated connection-status pill (Connecting / Live / Reconnecting / Offline), system toasts, page progress with comet-head, lightweight CSS-only loaders
 - **Background Jobs** — Thumbnail generation, image compression, media processing, webhook delivery via BullMQ
 - **Dark / Light Mode** — Custom theming with localStorage persistence
 - **Responsive Design** — Desktop-first with premium UI (Framer Motion, gradients, glow effects)
@@ -147,16 +148,26 @@ docker compose -f docker/docker-compose.dev.yml up -d
 
 ## Production Deployment (VPS)
 
+**Install pertama:**
+
 1. `cp .env.example .env` → isi manual (DATABASE_URL, R2, domain)
 2. `./install.sh`
+
+**Redeploy / update** (naikin fitur & fix terbaru) — sudah pernah install, tinggal:
+
+```bash
+cd /opt/storage-by-afr && ./update.sh
+```
+
+`./update.sh` otomatis: git pull → backup `.env`+nginx → validate → rebuild → sync DB (`db:push`, no-op kalau schema sudah cocok) → renew SSL → health check. **Push ke GitHub dulu** sebelum jalanin di VPS.
 
 Detail lengkap → **[DEPLOY.md](DEPLOY.md)** (wizard opsional: `./install.sh --wizard`)
 
 | Script | Fungsi |
 |--------|--------|
-| `./install.sh` | Deploy (pakai `.env` manual) |
-| `./deploy.sh` | Deploy ulang |
-| `./update.sh` | Update aman |
+| `./install.sh` | Install pertama (pakai `.env` manual) |
+| `./deploy.sh` | Rebuild dari kode di VPS (tanpa git pull) |
+| `./update.sh` | **Redeploy/update** — pull + backup + rebuild + migrate |
 
 ---
 
@@ -193,18 +204,23 @@ storage-by-afr/
 │   └── shares/             # Share management
 ├── components/
 │   ├── admin/              # Admin UI components
+│   ├── download/           # Download manager, widget, encrypted-download dialog
 │   ├── editors/            # Image editor, Note editor, PDF viewer
 │   ├── files/              # File browser, grid, preview, share dialog, upload panel
 │   ├── folders/            # Droppable folder (dnd-kit)
 │   ├── layout/             # AppShell, Sidebar, CommandPalette, ThemeProvider
 │   ├── media-viewers/      # Image, video, audio, PDF, SVG, text, office viewers
+│   ├── system/             # Connection-status pill, page-progress, toasts, Spinner, LoadingMark
 │   └── ui/                 # Button, Card, Input (shadcn-style)
 ├── lib/
 │   ├── api/                # Client fetch + server response helpers
 │   ├── auth/               # Session, password, permissions, audit log
 │   ├── cache/              # Redis cache layer (with fallback)
+│   ├── crypto/             # Client-side AES-GCM encryption helpers (E2E)
 │   ├── db/                 # Drizzle schema + connection
+│   ├── download/           # Download actions, store, encrypted-download store
 │   ├── queue/              # BullMQ job queue
+│   ├── search/             # Full-text search helpers (tsquery, tiptap → plaintext)
 │   ├── security/           # Rate limiting, CSRF, file validation, suspicious activity
 │   └── storage/            # Cloudflare R2 client
 ├── workers/                # Background job worker
@@ -230,6 +246,7 @@ Browser ──presigned URL──► Cloudflare R2 ──complete──► Next.
 5. **Suspicious Activity** — Pattern-based anomaly detection
 6. **Argon2id** — Password hashing with automatic salt
 7. **Presigned URLs** — Files are not directly accessible; temporary URLs only
+8. **End-to-end encryption (opt-in)** — Files encrypted client-side (AES-GCM, PBKDF2-derived key); server stores ciphertext only and never sees the passphrase
 
 ---
 

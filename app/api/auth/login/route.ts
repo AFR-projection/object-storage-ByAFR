@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
         user: {
           id: pendingUser.id,
           username: pendingUser.username,
-          email: pendingUser.email,
+          phone: pendingUser.phone,
           role: pendingUser.role,
         },
         mustChangePassword: pendingUser.mustChangePassword,
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
     const [user] = await db
       .select()
       .from(users)
-      .where(or(eq(users.username, identifier!), eq(users.email, identifier!)))
+      .where(or(eq(users.username, identifier!), eq(users.phone, identifier!)))
       .limit(1);
 
     // Unknown user — count toward IP throttle only
@@ -301,7 +301,7 @@ export async function POST(request: NextRequest) {
       user: {
         id: user.id,
         username: user.username,
-        email: user.email,
+        phone: user.phone,
         role: user.role,
       },
       mustChangePassword: user.mustChangePassword,
@@ -341,7 +341,7 @@ export async function GET() {
     return apiSuccess({
       id: user.id,
       username: user.username,
-      email: user.email,
+      phone: user.phone,
       role: user.role,
       quotaBytes: user.quotaBytes,
       usedBytes: user.usedBytes,

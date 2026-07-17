@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import {
   Download, Share2, Info, Maximize2, Minimize2, X,
   AlertCircle, FileText, Lock, Unlock, Loader2, Keyboard,
+  Eye, EyeOff, ShieldAlert,
 } from "lucide-react";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,8 @@ import {
   type EncryptionMetaV1,
 } from "@/lib/crypto/client-encryption";
 import { detectPreviewKind, previewKindLabel } from "@/lib/preview/detect-preview-type";
+import { requestDownload } from "@/lib/download/download-actions";
+import { Spinner } from "@/components/system/spinner";
 
 const ImageViewer = dynamic(() => import("@/components/media-viewers/image-viewer").then((m) => m.ImageViewer), { ssr: false, loading: () => <PreviewSkeleton label="Image" /> });
 const VideoViewer = dynamic(() => import("@/components/media-viewers/video-viewer").then((m) => m.VideoViewer), { ssr: false, loading: () => <PreviewSkeleton label="Video" /> });
@@ -40,8 +43,10 @@ interface FilePreviewProps {
 function PreviewSkeleton({ label }: { label: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-      <p className="text-xs text-muted-foreground">Loading {label.toLowerCase()}...</p>
+      <Spinner size="lg" />
+      <p className="text-xs text-muted-foreground">
+        <span className="loading-text-shimmer">Loading {label.toLowerCase()}…</span>
+      </p>
     </div>
   );
 }
@@ -58,6 +63,7 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const [passphrase, setPassphrase] = useState("");
+  const [showPassphrase, setShowPassphrase] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [decryptedUrl, setDecryptedUrl] = useState<string | null>(null);
@@ -117,23 +123,40 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
     if (isEncrypted && !decryptedUrl) {
       return (
         <div className="flex flex-col items-center justify-center h-full text-center px-4 bg-card">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-amber-500/20">
             <Lock className="h-8 w-8 text-amber-500" />
           </div>
-          <p className="text-sm font-medium">File terenkripsi</p>
-          <p className="mt-1 text-xs text-muted-foreground">Masukkan passphrase untuk membuka preview</p>
+          <p className="text-sm font-semibold">Encrypted file</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Enter your passphrase to decrypt and preview
+          </p>
           <form onSubmit={handleUnlock} className="mt-4 w-full max-w-xs space-y-2">
-            <Input
-              type="password"
-              placeholder="Passphrase"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              autoFocus
-            />
-            {unlockError && <p className="text-xs text-danger">{unlockError}</p>}
+            <div className="relative">
+              <Input
+                type={showPassphrase ? "text" : "password"}
+                placeholder="Passphrase"
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+                autoFocus
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassphrase((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+              >
+                {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {unlockError && (
+              <p className="flex items-center justify-center gap-1 text-xs text-danger">
+                <ShieldAlert className="h-3.5 w-3.5" /> {unlockError}
+              </p>
+            )}
             <Button type="submit" className="w-full" disabled={unlocking || !passphrase}>
               {unlocking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlock className="mr-2 h-4 w-4" />}
-              Buka
+              {unlocking ? "Decrypting…" : "Unlock"}
             </Button>
           </form>
         </div>
@@ -151,7 +174,7 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
 
     switch (previewKind) {
       case "pdf":
-        return streamUrl ? <PdfViewer fileId={file.id} previewUrl={streamUrl} /> : null;
+        return streamUrl ? <PdfViewer fileId={file.id} previewUrl={streamUrl} fileName={file.name} /> : null;
       case "image":
         return streamUrl ? <ImageViewer src={streamUrl} fileName={file.name} mimeType={file.mimeType} /> : null;
       case "svg":
@@ -190,7 +213,7 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
         </div>
         <p className="text-sm font-medium">Preview tidak tersedia</p>
         <p className="text-xs text-muted-foreground/60 mt-1">Tipe file ini belum didukung untuk preview inline</p>
-        <Button className="mt-4" onClick={() => window.open(`/api/download/${file.id}`)}>
+        <Button className="mt-4" onClick={() => requestDownload(file)}>
           <Download className="h-4 w-4 mr-1.5" /> Download
         </Button>
       </div>
@@ -243,7 +266,7 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowShortcuts((v) => !v)} title="Shortcuts">
                 <Keyboard className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(`/api/download/${file.id}`)} title="Download">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => requestDownload(file)} title="Download">
                 <Download className="h-4 w-4" />
               </Button>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowShare(true)} title="Share">

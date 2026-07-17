@@ -41,6 +41,17 @@ export function PageProgressBar() {
           busy ? "page-progress-active opacity-100" : "scale-x-0 opacity-0"
         )}
       />
+      {/* Glowing comet head that streaks ahead of the bar while busy. */}
+      {busy && (
+        <span
+          className="page-progress-comet absolute top-0 h-full w-24"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 70%, white) 70%, #fff)",
+            boxShadow: "0 0 12px 2px color-mix(in srgb, var(--accent) 80%, transparent)",
+          }}
+        />
+      )}
     </div>
   );
 }

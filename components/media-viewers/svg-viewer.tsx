@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Spinner } from "@/components/system/spinner";
 import DOMPurify from "isomorphic-dompurify";
 
 interface SvgViewerProps {
@@ -32,7 +33,7 @@ export function SvgViewer({ src, fileName }: SvgViewerProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+        <Spinner size="md" />
       </div>
     );
   }

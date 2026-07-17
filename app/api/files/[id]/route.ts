@@ -8,6 +8,7 @@ import { getAccessibleFile, getEffectiveUserId } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { tiptapToPlainText } from "@/lib/search/tiptap-text";
 
 export async function GET(
   _request: NextRequest,
@@ -83,7 +84,14 @@ export async function PUT(
     const { files } = await import("@/lib/db/schema");
     await db
       .update(files)
-      .set({ version: file.version + 1, updatedAt: new Date() })
+      .set({
+        version: file.version + 1,
+        updatedAt: new Date(),
+        // Refresh searchable text when the note body changed.
+        ...(body.content !== undefined
+          ? { contentText: tiptapToPlainText(body.content) }
+          : {}),
+      })
       .where(eq(files.id, id));
 
     await db.insert(changeHistory).values({

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Copy, Check, WrapText, AlignLeft, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/system/spinner";
 
 interface TextViewerProps {
   src: string;
@@ -219,7 +220,7 @@ export function TextViewer({ src, fileName, mimeType }: TextViewerProps) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+          <Spinner size="md" />
           <p className="text-xs text-muted-foreground">Loading file content...</p>
         </div>
       </div>

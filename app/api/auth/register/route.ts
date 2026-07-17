@@ -13,7 +13,7 @@ import { defaultQuotaBytes, getAdminSettings } from "@/lib/admin-settings";
 
 const registerSchema = z.object({
   username: z.string().min(3).max(50).regex(/^[a-zA-Z0-9._-]+$/, "Invalid username"),
-  email: z.string().email().optional(),
+  phone: z.string().min(10).max(15).regex(/^\d+$/, "Phone must be digits only").optional(),
   password: z.string().min(10).max(128),
 });
 
@@ -59,14 +59,14 @@ export async function POST(request: NextRequest) {
       .select({ id: users.id })
       .from(users)
       .where(
-        body.email
-          ? or(eq(users.username, body.username), eq(users.email, body.email))
+        body.phone
+          ? or(eq(users.username, body.username), eq(users.phone, body.phone))
           : eq(users.username, body.username)
       )
       .limit(1);
 
     if (existing) {
-      return apiError("Username or email already taken", 409);
+      return apiError("Username or phone number already taken", 409);
     }
 
     const passwordHash = await hashPassword(body.password);
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       .insert(users)
       .values({
         username: body.username,
-        email: body.email ?? null,
+        phone: body.phone ?? null,
         passwordHash,
         role: "user",
         quotaBytes,

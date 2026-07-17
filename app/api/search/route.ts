@@ -7,6 +7,7 @@ import { requireAuth } from "@/lib/auth/session";
 import { getEffectiveUserId } from "@/lib/auth/permissions";
 import { cacheGet, cacheSet } from "@/lib/cache/redis";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
+import { hasSearchTerms, ftsMatch, ftsRank } from "@/lib/search/fts";
 
 const searchSchema = z.object({
   q: z.string().optional(),
@@ -17,6 +18,9 @@ const searchSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   cursor: z.string().optional(),
+  // Offset-based page index, used only for full-text (relevance-ranked) results
+  // where a createdAt cursor is not meaningful.
+  page: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
@@ -32,8 +36,11 @@ export async function GET(request: NextRequest) {
 
     const conditions = [eq(files.userId, userId), isNull(files.deletedAt)];
 
-    if (params.q) {
-      conditions.push(ilike(files.name, `%${params.q}%`));
+    // Non-empty trimmed query enables full-text mode; null means filter-only.
+    const query = hasSearchTerms(params.q) ? params.q.trim() : null;
+    if (query) {
+      // Full-text: match name + note/document text via the generated tsvector.
+      conditions.push(ftsMatch(query));
     }
     if (params.mimeType) {
       conditions.push(ilike(files.mimeType, `${params.mimeType}%`));
@@ -53,6 +60,31 @@ export async function GET(request: NextRequest) {
     if (params.to) {
       conditions.push(lte(files.createdAt, new Date(params.to)));
     }
+
+    if (query) {
+      // Relevance-ranked results. Rank order is not a monotonic cursor, so we
+      // page with LIMIT/OFFSET instead of a createdAt cursor.
+      const rank = ftsRank(query);
+      const offset = params.page * params.limit;
+
+      const result = await db
+        .select()
+        .from(files)
+        .where(and(...conditions))
+        .orderBy(desc(rank), desc(files.createdAt))
+        .limit(params.limit + 1)
+        .offset(offset);
+
+      const hasMore = result.length > params.limit;
+      const items = hasMore ? result.slice(0, params.limit) : result;
+      const nextPage = hasMore ? params.page + 1 : null;
+
+      const data = { files: items, nextPage, nextCursor: null, total: items.length };
+      await cacheSet(cacheKey, data, 30);
+      return apiSuccess(data);
+    }
+
+    // Filter-only search (no text query): keep the fast createdAt-cursor path.
     if (params.cursor) {
       conditions.push(lt(files.createdAt, new Date(params.cursor)));
     }
@@ -68,7 +100,7 @@ export async function GET(request: NextRequest) {
     const items = hasMore ? result.slice(0, params.limit) : result;
     const nextCursor = hasMore ? items[items.length - 1].createdAt.toISOString() : null;
 
-    const data = { files: items, nextCursor, total: items.length };
+    const data = { files: items, nextCursor, nextPage: null, total: items.length };
     await cacheSet(cacheKey, data, 30);
     return apiSuccess(data);
   } catch (error) {

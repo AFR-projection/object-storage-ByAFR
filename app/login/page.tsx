@@ -155,12 +155,12 @@ export default function LoginPage() {
               <>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-foreground/80">
-                    Username / Email
+                    Username / WhatsApp number
                   </label>
                   <Input
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="your@email.com"
+                    placeholder="Username or 628xxxxxxxxxx"
                     autoComplete="username"
                     required
                     className="h-11"

@@ -109,7 +109,7 @@ export async function PATCH(
 
     const updates: Partial<typeof existing> = { updatedAt: new Date() };
     if (body.username) updates.username = body.username;
-    if (body.email !== undefined) updates.email = body.email;
+    if (body.phone !== undefined) updates.phone = body.phone;
     if (body.status) {
       updates.status = body.status;
       if (body.status === "active") {

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Play, Pause, Volume2, VolumeX, Maximize2, SkipBack, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/system/spinner";
 
 interface VideoViewerProps {
   src: string;
@@ -124,7 +125,7 @@ export function VideoViewer({ src, fileName }: VideoViewerProps) {
           <>
             {loading && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+                <Spinner size="lg" style={{ ["--accent" as string]: "#fff" }} />
               </div>
             )}
             <video

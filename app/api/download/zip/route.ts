@@ -55,6 +55,18 @@ export async function POST(request: NextRequest) {
       (r) => !r.isNote && r.r2Key && r.r2Key !== "pending" && !r.r2Key.startsWith("notes/")
     );
 
+    // End-to-end encrypted files are stored as ciphertext the server can't
+    // decrypt. Never let them into a server-built ZIP — that would leak
+    // unusable-but-unprotected bytes and defeat the passphrase gate. They must
+    // be downloaded individually and decrypted in the browser.
+    const encryptedInSelection = downloadable.filter((r) => r.encrypted);
+    if (encryptedInSelection.length > 0) {
+      return apiError(
+        "File terenkripsi tidak bisa dimasukkan ke ZIP — download satu per satu dengan passphrase",
+        400
+      );
+    }
+
     if (downloadable.length === 0) {
       return apiError("No downloadable files in selection", 400);
     }
@@ -89,9 +101,15 @@ export async function POST(request: NextRequest) {
           const obj = await downloadFromR2Stream(file.r2Key);
           if (!obj.body) continue;
 
-          const nodeStream = Readable.fromWeb(
-            obj.body as unknown as import("stream/web").ReadableStream
-          );
+          // In the Node runtime the AWS SDK returns a Node Readable (e.g.
+          // ChecksumStream) which archiver accepts directly. Only convert when
+          // R2 hands back a web ReadableStream (edge/other runtimes).
+          const body = obj.body as unknown;
+          const nodeStream =
+            typeof (body as { pipe?: unknown }).pipe === "function"
+              ? (body as Readable)
+              : Readable.fromWeb(body as import("stream/web").ReadableStream);
+
           const entryName = uniqueZipName(file.name, nameCounts);
           archive.append(nodeStream, { name: entryName });
         }

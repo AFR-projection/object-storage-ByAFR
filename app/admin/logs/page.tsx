@@ -72,7 +72,7 @@ type LogEntry = {
   metadata: Record<string, unknown> | null;
   createdAt: string;
   username: string;
-  email: string | null;
+  phone: string | null;
   userRole: string;
 };
 
@@ -162,10 +162,10 @@ function DescribeMetadata({ log }: { log: LogEntry }) {
                 </span>
               </>
             )}
-            {meta.email && (
+            {meta.phone && (
               <>
                 <span className="text-muted-foreground"> → </span>
-                <span className="text-muted-foreground">{String(meta.email)}</span>
+                <span className="text-muted-foreground">{String(meta.phone)}</span>
               </>
             )}
           </>
@@ -318,12 +318,12 @@ function AdminLogsContent() {
     if (!logs || logs.length === 0) return;
     setExporting(true);
 
-    const headers = ["Timestamp", "Action", "User", "Email", "Role", "IP", "Resource", "Details"];
+    const headers = ["Timestamp", "Action", "User", "WhatsApp", "Role", "IP", "Resource", "Details"];
     const rows = logs.map((log) => [
       new Date(log.createdAt).toISOString(),
       log.action,
       log.username,
-      log.email ?? "",
+      log.phone ?? "",
       log.userRole,
       log.ip ?? "",
       log.resourceType ? `${log.resourceType}/${log.resourceId}` : "",
@@ -541,7 +541,7 @@ function AdminLogsContent() {
                             <span className="rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-500">ADMIN</span>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">{log.email}</p>
+                        <p className="text-xs text-muted-foreground truncate">{log.phone}</p>
                       </div>
                       <div>
                         {log.ip ? (
@@ -591,7 +591,7 @@ function AdminLogsContent() {
                                 <Link href={`/admin/users/${log.userId}`} className="hover:underline">
                                   {log.username}
                                 </Link>{" "}
-                                ({log.email})
+                                ({log.phone})
                               </p>
                               <p className="text-muted-foreground">
                                 ID:{" "}

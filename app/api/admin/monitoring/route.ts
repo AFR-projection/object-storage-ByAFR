@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         ip: activityLogs.ip,
         createdAt: activityLogs.createdAt,
         username: users.username,
-        email: users.email,
+        phone: users.phone,
         userRole: users.role,
       })
       .from(activityLogs)
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       filteredLogs = logs.filter(
         (log) =>
           log.username?.toLowerCase().includes(searchLower) ||
-          log.email?.toLowerCase().includes(searchLower) ||
+          log.phone?.toLowerCase().includes(searchLower) ||
           log.action.toLowerCase().includes(searchLower) ||
           log.ip?.toLowerCase().includes(searchLower) ||
           JSON.stringify(log.metadata).toLowerCase().includes(searchLower)

@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const [existing] = await db
       .select({ id: users.id })
       .from(users)
-      .where(or(eq(users.username, body.username), eq(users.email, cleanPhone)))
+      .where(or(eq(users.username, body.username), eq(users.phone, cleanPhone)))
       .limit(1);
 
     if (existing) {
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       .insert(users)
       .values({
         username: body.username,
-        email: cleanPhone,
+        phone: cleanPhone,
         passwordHash,
         role: "user",
         quotaBytes,

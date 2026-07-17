@@ -28,7 +28,7 @@ async function bootstrapMaster() {
 
   await db.insert(users).values({
     username,
-    email: null,
+    phone: null,
     passwordHash,
     role: "master",
     status: "active",

@@ -18,6 +18,8 @@ import dynamic from "next/dynamic";
 import { DndContext, DragEndEvent } from "@dnd-kit/core";
 import { FolderCard } from "@/components/folders/folder-card";
 import { UploadQueue, traverseDirectory } from "@/lib/upload-queue";
+import { requestDownload, downloadZip, downloadFileWithProgress } from "@/lib/download/download-actions";
+import { EncryptionSetupDialog } from "./encryption-setup-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 
 const NoteEditor = dynamic(() => import("@/components/editors/note-editor").then((m) => m.NoteEditor), { ssr: false });
@@ -89,6 +91,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [encryptUploads, setEncryptUploads] = useState(false);
   const [encryptPassphrase, setEncryptPassphrase] = useState("");
+  const [encryptDialogOpen, setEncryptDialogOpen] = useState(false);
   const [inviteFolder, setInviteFolder] = useState<FolderRecord | null>(null);
 
   // Infinite scroll — extra pages loaded via "Load more"
@@ -306,7 +309,17 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   const handleFileAction = useCallback(async (action: string, file: FileRecord) => {
     try {
       if (action === "download") {
-        window.open(`/api/download/${file.id}`, "_blank");
+        requestDownload(file);
+        return;
+      }
+      if (action === "download-progress") {
+        // Encrypted files must be decrypted client-side; progress-proxy would
+        // only stream ciphertext. Route them through the passphrase dialog.
+        if (file.encrypted) {
+          requestDownload(file);
+        } else {
+          downloadFileWithProgress(file.id, file.name);
+        }
         return;
       }
       if (trash) {
@@ -602,37 +615,27 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     if (ids.length === 1) {
-      window.open(`/api/download/${ids[0]}`, "_blank");
+      const file = allFiles.find((f) => f.id === ids[0]);
+      if (file) {
+        requestDownload(file);
+      } else {
+        downloadZip(ids, `download-1-file.zip`);
+      }
       return;
     }
-
-    try {
-      const { getCsrfToken } = await import("@/lib/api/client");
-      const res = await fetch("/api/download/zip", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": await getCsrfToken(),
-        },
-        body: JSON.stringify({ ids }),
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        showError(json?.error ?? "ZIP download failed");
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "download.zip";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      showError("ZIP download failed");
+    // A ZIP is built server-side and cannot decrypt E2E-encrypted files, so any
+    // encrypted selection would land in the archive as ciphertext. Block that:
+    // steer the user to download encrypted files one-by-one (passphrase gated).
+    const encryptedSelected = ids
+      .map((id) => allFiles.find((f) => f.id === id))
+      .filter((f): f is FileRecord => !!f && !!f.encrypted);
+    if (encryptedSelected.length > 0) {
+      showError(
+        `${encryptedSelected.length} file terenkripsi tidak bisa masuk ZIP. Download satu per satu biar bisa dimasukin passphrase.`
+      );
+      return;
     }
+    await downloadZip(ids, `download-${ids.length}-files.zip`);
   }
 
   // ── Select file from URL ──
@@ -728,10 +731,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
                 setEncryptPassphrase("");
                 return;
               }
-              const pass = prompt("Encryption passphrase for uploads:");
-              if (!pass) return;
-              setEncryptPassphrase(pass);
-              setEncryptUploads(true);
+              setEncryptDialogOpen(true);
             }}
           >
             <Lock className="h-4 w-4 sm:mr-1.5" />
@@ -928,6 +928,15 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
           onClose={() => setInviteFolder(null)}
         />
       )}
+
+      <EncryptionSetupDialog
+        open={encryptDialogOpen}
+        onClose={() => setEncryptDialogOpen(false)}
+        onConfirm={(pass) => {
+          setEncryptPassphrase(pass);
+          setEncryptUploads(true);
+        }}
+      />
     </div>
 
     {showUploadPanel && uploadQueue && (

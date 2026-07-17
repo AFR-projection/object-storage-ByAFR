@@ -10,8 +10,20 @@ import {
   index,
   uniqueIndex,
   pgEnum,
+  customType,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql, type SQL } from "drizzle-orm";
+
+/**
+ * PostgreSQL `tsvector` column type for full-text search. Not represented in JS
+ * (we never read it directly) — Postgres computes it from a generated expression
+ * and we query it via the FTS helpers in lib/search/fts.ts.
+ */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 export const userRoleEnum = pgEnum("user_role", ["master", "user"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "suspended"]);
@@ -48,7 +60,7 @@ export const users = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     username: text("username").notNull(),
-    email: text("email"),
+    phone: text("phone"),
     passwordHash: text("password_hash").notNull(),
     role: userRoleEnum("role").notNull().default("user"),
     status: userStatusEnum("status").notNull().default("active"),
@@ -69,7 +81,7 @@ export const users = pgTable(
   },
   (table) => [
     uniqueIndex("users_username_unique").on(table.username),
-    uniqueIndex("users_email_unique").on(table.email),
+    uniqueIndex("users_phone_unique").on(table.phone),
     index("users_role_idx").on(table.role),
   ]
 );
@@ -137,6 +149,15 @@ export const files = pgTable(
     isFavorite: boolean("is_favorite").notNull().default(false),
     isNote: boolean("is_note").notNull().default(false),
     thumbnailKey: text("thumbnail_key"),
+    // Searchable body text: note plaintext today; extracted PDF/Office text later
+    // (Phase B). Kept separate from name so the FTS vector can weight them.
+    contentText: text("content_text"),
+    // Generated full-text search vector: name (weight A) + contentText (weight B).
+    // STORED so it is computed on write by Postgres — no trigger, never stale.
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      (): SQL =>
+        sql`setweight(to_tsvector('simple', coalesce(${files.name}, '')), 'A') || setweight(to_tsvector('simple', coalesce(${files.contentText}, '')), 'B')`
+    ),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     version: integer("version").notNull().default(1),
     encrypted: boolean("encrypted").notNull().default(false),
@@ -150,6 +171,8 @@ export const files = pgTable(
     index("files_user_active_idx").on(table.userId, table.deletedAt),
     index("files_r2_key_idx").on(table.r2Key),
     index("files_favorite_idx").on(table.userId, table.isFavorite),
+    // GIN index makes tsvector @@ tsquery lookups fast.
+    index("files_search_vector_idx").using("gin", table.searchVector),
   ]
 );
 

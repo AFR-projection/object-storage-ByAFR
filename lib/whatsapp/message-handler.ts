@@ -27,7 +27,7 @@ export async function handleIncomingMessage(
   const [user] = await db
     .select()
     .from(users)
-    .where(eq(users.email, cleanPhone))
+    .where(eq(users.phone, cleanPhone))
     .limit(1);
 
   if (!user || user.status !== "suspended") return null;
