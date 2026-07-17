@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { apiFetch } from "@/lib/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminStatCard } from "@/components/admin/admin-stat-card";
 import { formatBytes, formatDate } from "@/lib/utils";
 import {
   Users, FileText, HardDrive, Share2, Activity, Upload,
@@ -99,27 +101,16 @@ export default function AdminOverviewPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-      >
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">System Overview</h1>
-          <p className="mt-1 text-sm text-muted-foreground/70">
-            Real-time platform statistics and health monitoring
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground/60">
-          <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          Live • Auto-refreshes every 30s
-        </div>
-      </motion.div>
+      <AdminPageHeader
+        title="System Overview"
+        subtitle="Real-time platform statistics and health monitoring"
+        live
+        liveLabel="Live • auto-refreshes every 30s"
+      />
 
       {/* Primary Stats */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard
+        <AdminStatCard
           label="Total Users"
           value={stats?.users.total ?? 0}
           icon={Users}
@@ -128,7 +119,7 @@ export default function AdminOverviewPage() {
           subtitle={`${stats?.users.active ?? 0} active, ${stats?.users.suspended ?? 0} suspended`}
           delay={0}
         />
-        <StatCard
+        <AdminStatCard
           label="Total Files"
           value={stats?.files.total ?? 0}
           icon={FileText}
@@ -137,7 +128,7 @@ export default function AdminOverviewPage() {
           subtitle={`${stats?.files.notes ?? 0} notes, ${stats?.folders ?? 0} folders`}
           delay={0.06}
         />
-        <StatCard
+        <AdminStatCard
           label="Storage Used"
           value={formatBytes(stats?.storage.used ?? 0)}
           icon={HardDrive}
@@ -146,7 +137,7 @@ export default function AdminOverviewPage() {
           subtitle={`${storagePct.toFixed(1)}% of ${formatBytes(stats?.storage.quota ?? 0)}`}
           delay={0.12}
         />
-        <StatCard
+        <AdminStatCard
           label="Shared Links"
           value={stats?.shares ?? 0}
           icon={Share2}
@@ -490,46 +481,6 @@ export default function AdminOverviewPage() {
         </motion.div>
       )}
     </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  gradient,
-  iconBg,
-  subtitle,
-  delay,
-}: {
-  label: string;
-  value: string | number;
-  icon: typeof Users;
-  gradient: string;
-  iconBg: string;
-  subtitle: string;
-  delay: number;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, type: "spring", stiffness: 300, damping: 24 }}
-    >
-      <Card className="relative overflow-hidden border-border/50 hover:border-accent/20 transition-colors">
-        <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${gradient}`} />
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-          <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconBg}`}>
-            <Icon className="h-4 w-4" />
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-xl sm:text-2xl font-bold tracking-tight">{value}</p>
-          <p className="mt-1 text-xs text-muted-foreground/60">{subtitle}</p>
-        </CardContent>
-      </Card>
-    </motion.div>
   );
 }
 

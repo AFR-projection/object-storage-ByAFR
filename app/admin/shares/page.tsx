@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { apiFetch } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { useConfirm } from "@/components/admin/confirm-dialog";
+import { notify } from "@/lib/system/notify-store";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
 import {
   Share2,
@@ -44,12 +46,12 @@ type ShareRow = {
 
 export default function AdminSharesPage() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [status, setStatus] = useState<"all" | "active" | "expired">("all");
   const [ownerSearch, setOwnerSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [revoking, setRevoking] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [error, setError] = useState("");
 
   const { data: shares, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["admin-shares", status],
@@ -88,27 +90,36 @@ export default function AdminSharesPage() {
     }
   }
 
-  async function revokeSelected() {
+  function revokeSelected() {
     if (selected.size === 0) return;
-    if (!window.confirm(`Revoke ${selected.size} share link(s)? This cannot be undone.`)) return;
-    setRevoking(true);
-    setError("");
-    try {
-      const res = await apiFetch("/api/admin/shares", {
-        method: "DELETE",
-        body: JSON.stringify({ ids: Array.from(selected) }),
-      });
-      if (!res.success) {
-        setError(res.error ?? "Failed to revoke shares");
-        return;
+    confirm.open(
+      {
+        title: `Revoke ${selected.size} share link${selected.size !== 1 ? "s" : ""}?`,
+        message: "Anyone holding these links will immediately lose access. This cannot be undone.",
+        confirmLabel: "Revoke links",
+        danger: true,
+      },
+      async () => {
+        setRevoking(true);
+        try {
+          const res = await apiFetch("/api/admin/shares", {
+            method: "DELETE",
+            body: JSON.stringify({ ids: Array.from(selected) }),
+          });
+          if (!res.success) {
+            notify({ title: res.error ?? "Failed to revoke shares", tone: "error" });
+            return;
+          }
+          notify({ title: `${selected.size} share link(s) revoked`, tone: "success" });
+          setSelected(new Set());
+          queryClient.invalidateQueries({ queryKey: ["admin-shares"] });
+        } catch {
+          notify({ title: "Connection failed", tone: "error" });
+        } finally {
+          setRevoking(false);
+        }
       }
-      setSelected(new Set());
-      queryClient.invalidateQueries({ queryKey: ["admin-shares"] });
-    } catch {
-      setError("Connection failed");
-    } finally {
-      setRevoking(false);
-    }
+    );
   }
 
   async function copyUrl(url: string, id: string) {
@@ -123,39 +134,27 @@ export default function AdminSharesPage() {
 
   return (
     <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-      >
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Shares Center</h1>
-          <p className="mt-1 text-sm text-muted-foreground/70">
-            Review and revoke share links across all users
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={cn("h-4 w-4 mr-1.5", isFetching && "animate-spin")} />
-            Refresh
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={selected.size === 0 || revoking}
-            onClick={revokeSelected}
-          >
-            {revoking ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
-            Revoke ({selected.size})
-          </Button>
-        </div>
-      </motion.div>
-
-      {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-          {error}
-        </div>
-      )}
+      <AdminPageHeader
+        title="Shares Center"
+        subtitle="Review and revoke share links across all users"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+              <RefreshCw className={cn("h-4 w-4 mr-1.5", isFetching && "animate-spin")} />
+              Refresh
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={selected.size === 0 || revoking}
+              onClick={revokeSelected}
+            >
+              {revoking ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
+              Revoke ({selected.size})
+            </Button>
+          </>
+        }
+      />
 
       <Card className="border-border/40">
         <CardHeader className="pb-3">
@@ -307,6 +306,8 @@ export default function AdminSharesPage() {
           )}
         </CardContent>
       </Card>
+
+      {confirm.element}
     </div>
   );
 }

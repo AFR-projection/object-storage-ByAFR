@@ -62,7 +62,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const res = await apiFetch("/api/auth/register-wa", {
+      const res = await apiFetch<{ pairingCode?: string }>("/api/auth/register-wa", {
         method: "POST",
         body: JSON.stringify({
           username,
@@ -74,7 +74,10 @@ export default function RegisterPage() {
         setError(res.error ?? "Registration failed");
         return;
       }
-      router.push(`/verify-wa?phone=${encodeURIComponent(cleanPhone)}`);
+      const code = res.data?.pairingCode ?? "";
+      router.push(
+        `/verify-wa?phone=${encodeURIComponent(cleanPhone)}&code=${encodeURIComponent(code)}`
+      );
     } catch {
       setError("Connection failed");
     } finally {

@@ -8,7 +8,8 @@ import { validateCsrf, checkRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { getAdminSettings, defaultQuotaBytes } from "@/lib/admin-settings";
 import { validatePasswordStrength } from "@/lib/security/password-policy";
-import { sendCustomMessage, isSenderNumber } from "@/lib/whatsapp/whatsapp-service";
+import { sendCustomMessage, isSenderNumber, createPairing } from "@/lib/whatsapp/whatsapp-service";
+import { pairingPrompt } from "@/lib/whatsapp/templates";
 import { getClientIp } from "@/lib/auth/session";
 
 const registerSchema = z.object({
@@ -74,8 +75,11 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    const msg = `Notification from Storage ByAFR.\n\nTo receive your OTP code, please reply to this message with the word:\n\nSAVE`;
-    const sent = await sendCustomMessage(cleanPhone, msg);
+    // Create a pairing code and send the greeting. The code is intentionally
+    // NOT sent over WhatsApp — only the browser shows it, so replying with it
+    // proves the person holds both the session and the number.
+    const pairingCode = await createPairing(cleanPhone);
+    const sent = await sendCustomMessage(cleanPhone, pairingPrompt());
 
     if (!sent) {
       await db.delete(users).where(eq(users.id, user.id));
@@ -88,7 +92,8 @@ export async function POST(request: NextRequest) {
     return apiSuccess({
       userId: user.id,
       phoneNumber: cleanPhone,
-      message: "Check your WhatsApp for the next instructions",
+      pairingCode,
+      message: "Reply to the WhatsApp message with the code shown on screen",
     });
   } catch (error) {
     return handleApiError(error);

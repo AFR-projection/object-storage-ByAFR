@@ -14,6 +14,8 @@ import {
 import { logActivity } from "@/lib/auth/audit";
 import { peekRateLimit, checkRateLimit, resetRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { notifyUser } from "@/lib/whatsapp/notify-user";
+import { parseUserAgent } from "@/lib/access-tracking";
 import {
   createPending2faToken,
   verifyPending2faToken,
@@ -57,6 +59,13 @@ async function recordIpFailure(ip: string, userId?: string) {
     }
   }
   return result;
+}
+
+/** Human-readable device label from a user-agent, e.g. "Chrome on Windows 11". */
+function deviceLabel(userAgent: string): string {
+  const { browser, os } = parseUserAgent(userAgent);
+  if (browser === "Unknown" && os === "Unknown") return "an unknown device";
+  return `${browser} on ${os}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -131,6 +140,15 @@ export async function POST(request: NextRequest) {
         ip,
         metadata: { userAgent, success: true, via2fa: true, newDevice },
       });
+
+      if (newDevice) {
+        void notifyUser(pendingUser.id, {
+          type: "login",
+          at: new Date(),
+          ip,
+          device: deviceLabel(userAgent),
+        });
+      }
 
       return apiSuccess({
         user: {
@@ -220,6 +238,10 @@ export async function POST(request: NextRequest) {
           ip,
           metadata: { userAgent, attempts: newAttempts },
         });
+        void notifyUser(user.id, {
+          type: "account_locked",
+          minutes: Math.round(LOCKOUT_WINDOW_MS / 60000),
+        });
         return apiError(MSG_ACCOUNT_LOCKED, 429, { code: "ACCOUNT_LOCKED" });
       }
 
@@ -265,6 +287,15 @@ export async function POST(request: NextRequest) {
       ip,
       metadata: { userAgent, success: true, newDevice },
     });
+
+    if (newDevice) {
+      void notifyUser(user.id, {
+        type: "login",
+        at: new Date(),
+        ip,
+        device: deviceLabel(userAgent),
+      });
+    }
 
     return apiSuccess({
       user: {

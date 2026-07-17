@@ -8,6 +8,7 @@ import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { ScrollText, Search, RefreshCw, Activity, Upload, Download, Trash2, Loader2, FileDown, ChevronDown, ChevronRight, LogIn, LogOut, Share2, Edit3, FolderPlus, FolderMinus, UserPlus, UserMinus, Shield, Star, Clock, Globe, FileText, HardDrive, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -345,9 +346,36 @@ function AdminLogsContent() {
   }
 
   return (
-    <div>
+    <div className="space-y-6">
+      <AdminPageHeader
+        title="Activity Logs"
+        subtitle="Audit trail of every action across the platform"
+        live={autoRefresh}
+        actions={
+          <>
+            <Button
+              variant={autoRefresh ? "default" : "secondary"}
+              size="sm"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className="gap-1.5"
+            >
+              <Clock className={cn("h-3.5 w-3.5", autoRefresh && "animate-spin")} />
+              Auto
+            </Button>
+            <Button variant="secondary" size="sm" onClick={exportToCSV} className="gap-1.5" disabled={isLoading || !logs?.length}>
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+              Export
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => refetch()} className="gap-1.5" disabled={isLoading}>
+              {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </Button>
+          </>
+        }
+      />
+
       {/* Stats Bar */}
-      <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Total Logs", value: stats.total, color: "text-foreground" },
           { label: "Unique Users", value: stats.uniqueUsers, color: "text-blue-500" },
@@ -356,13 +384,13 @@ function AdminLogsContent() {
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-border/50 bg-surface/50 px-4 py-3">
             <p className="text-xs text-muted-foreground">{s.label}</p>
-            <p className={cn("text-xl font-bold", s.color)}>{s.value}</p>
+            <p className={cn("text-2xl font-bold tracking-tight", s.color)}>{s.value}</p>
           </div>
         ))}
       </div>
 
       {/* Action Filter Chips */}
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
         {filterActions.map((f) => {
           const Icon = f.icon;
           const isActive = action === f.value;
@@ -391,7 +419,7 @@ function AdminLogsContent() {
       </div>
 
       {/* Toolbar */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
           <Input
@@ -408,25 +436,6 @@ function AdminLogsContent() {
               <X className="h-3.5 w-3.5" />
             </button>
           )}
-        </div>
-        <div className="flex items-center gap-2 ml-auto">
-          <Button
-            variant={autoRefresh ? "default" : "secondary"}
-            size="sm"
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className="gap-1.5"
-          >
-            <Clock className={cn("h-3.5 w-3.5", autoRefresh && "animate-spin")} />
-            Auto
-          </Button>
-          <Button variant="secondary" onClick={exportToCSV} className="gap-1.5" disabled={isLoading || !logs?.length}>
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            Export
-          </Button>
-          <Button variant="secondary" onClick={() => refetch()} className="gap-1.5" disabled={isLoading}>
-            {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Refresh
-          </Button>
         </div>
       </div>
 

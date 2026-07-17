@@ -361,6 +361,27 @@ export const otpTokens = pgTable(
   ]
 );
 
+/**
+ * Pairing handshake for WhatsApp registration. The user is shown `code` in the
+ * browser and must reply with it to the sender, proving they control both the
+ * browser session and the WhatsApp number before any OTP is issued.
+ */
+export const waPairings = pgTable(
+  "wa_pairings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    phoneNumber: text("phone_number").notNull(),
+    code: text("code").notNull(),
+    verified: boolean("verified").notNull().default(false),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("wa_pairings_phone_idx").on(table.phoneNumber),
+    index("wa_pairings_expires_idx").on(table.expiresAt),
+  ]
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   folders: many(folders),
@@ -390,3 +411,4 @@ export type File = typeof files.$inferSelect;
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type WhatsappSender = typeof whatsappSenders.$inferSelect;
 export type OtpToken = typeof otpTokens.$inferSelect;
+export type WaPairing = typeof waPairings.$inferSelect;

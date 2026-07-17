@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Cloud, Loader2, CheckCircle2, MessageCircle } from "lucide-react";
+import { Cloud, Loader2, CheckCircle2, MessageCircle, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
@@ -14,18 +14,17 @@ function VerifyWAContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const phoneNumber = searchParams.get("phone");
+  const pairingCode = searchParams.get("code") ?? "";
 
   const [step, setStep] = useState<Step>("waiting-save");
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [waitTimer, setWaitTimer] = useState(0);
-
-  if (!phoneNumber) {
-    return null;
-  }
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (!phoneNumber) return;
     const checkVerification = async () => {
       try {
         const res = await apiFetch<{ status: string }>(
@@ -44,6 +43,20 @@ function VerifyWAContent() {
     const interval = setInterval(checkVerification, 3000);
     return () => clearInterval(interval);
   }, [phoneNumber, router]);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(pairingCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable — user can still read the code */
+    }
+  };
+
+  if (!phoneNumber) {
+    return null;
+  }
 
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,15 +142,33 @@ function VerifyWAContent() {
             >
               <div className="rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-4">
                 <p className="text-sm text-blue-900 dark:text-blue-100">
-                  📱 Check your WhatsApp and reply to the message from Storage ByAFR by typing:
+                  📱 You have a message from Storage ByAFR on WhatsApp. Reply to it
+                  with the code below to verify your number:
                 </p>
-                <p className="text-lg font-bold text-blue-600 dark:text-blue-400 mt-2">SAVE</p>
               </div>
-              <div className="flex justify-center py-8">
+
+              <div className="flex items-center gap-3 rounded-lg border-2 border-accent/40 bg-accent/5 px-4 py-4">
+                <span className="flex-1 text-center text-3xl font-mono font-bold tracking-[0.3em] text-accent">
+                  {pairingCode || "------"}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={copyCode}
+                  className="gap-2 shrink-0"
+                  disabled={!pairingCode}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+
+              <div className="flex justify-center py-4">
                 <Loader2 className="h-8 w-8 animate-spin text-accent" />
               </div>
               <p className="text-center text-sm text-muted-foreground">
-                Waiting for your confirmation...
+                Waiting for your reply on WhatsApp...
               </p>
             </motion.div>
           )}

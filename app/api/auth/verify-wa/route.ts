@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, desc, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { otpTokens } from "@/lib/db/schema";
+import { otpTokens, users } from "@/lib/db/schema";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET(request: NextRequest) {
@@ -11,8 +11,24 @@ export async function GET(request: NextRequest) {
 
     const cleanPhone = phoneNumber.replace(/\D/g, "");
 
-    const otp = await db
-      .select()
+    // Registration state is driven by the USER, not by leftover OTP tokens.
+    // A previous test run could leave a verified token for this number; keying
+    // off that wrongly reported "verified" and bounced the user to /dashboard
+    // (then /login) before they ever entered a code.
+    const [user] = await db
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.email, cleanPhone))
+      .limit(1);
+
+    if (!user) return apiSuccess({ status: "pending" });
+
+    // Account activated => registration fully complete.
+    if (user.status === "active") return apiSuccess({ status: "verified" });
+
+    // Still pending: has a live (unexpired, unverified) OTP been issued yet?
+    const [liveOtp] = await db
+      .select({ id: otpTokens.id })
       .from(otpTokens)
       .where(
         and(
@@ -24,24 +40,7 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(otpTokens.createdAt))
       .limit(1);
 
-    if (otp.length > 0) {
-      return apiSuccess({ status: "otp-sent" });
-    }
-
-    const verified = await db
-      .select()
-      .from(otpTokens)
-      .where(
-        and(eq(otpTokens.phoneNumber, cleanPhone), eq(otpTokens.verified, true))
-      )
-      .orderBy(desc(otpTokens.createdAt))
-      .limit(1);
-
-    if (verified.length > 0) {
-      return apiSuccess({ status: "verified" });
-    }
-
-    return apiSuccess({ status: "pending" });
+    return apiSuccess({ status: liveOtp ? "otp-sent" : "pending" });
   } catch (error) {
     return handleApiError(error);
   }

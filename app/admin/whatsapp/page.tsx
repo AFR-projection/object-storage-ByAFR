@@ -16,6 +16,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { apiFetch } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import type { WhatsappSender } from "@/lib/db/schema";
@@ -123,18 +124,16 @@ export default function WhatsAppSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">WhatsApp Gateway</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage WhatsApp numbers for sending OTP & notifications
-          </p>
-        </div>
-        <Button onClick={() => setShowAddModal(true)} className="gap-2" size="lg">
-          <Plus className="w-4 h-4" />
-          Add Sender
-        </Button>
-      </div>
+      <AdminPageHeader
+        title="WhatsApp Gateway"
+        subtitle="Manage WhatsApp numbers for sending OTP & notifications"
+        actions={
+          <Button onClick={() => setShowAddModal(true)} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Add Sender
+          </Button>
+        }
+      />
 
       {isLoading ? (
         <div className="flex justify-center py-12">

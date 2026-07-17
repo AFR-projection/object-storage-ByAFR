@@ -1,18 +1,16 @@
 import { db } from "@/lib/db";
-import { whatsappSenders, otpTokens } from "@/lib/db/schema";
+import { whatsappSenders, otpTokens, waPairings } from "@/lib/db/schema";
 import { eq, and, gt, lt, desc, or } from "drizzle-orm";
 import { sendMessage, ensureConnected } from "./whatsapp-client";
 import { generateOTP, hashOTP } from "./otp-utils";
+import { otpInfo, otpCodeOnly } from "./templates";
 
 const OTP_EXPIRY_MINUTES = 5;
 const OTP_RATE_LIMIT_SECONDS = 60;
+const PAIRING_EXPIRY_MINUTES = 15;
 
-/**
- * Pick an active sender (round-robin by priority) and deliver a message.
- * Uses ensureConnected() so a sender whose socket was lost on a server restart
- * is transparently revived from its on-disk session before sending.
- */
-async function deliver(phoneNumber: string, message: string): Promise<boolean> {
+/** Return the id of the first active, connected sender, or null if none. */
+async function pickReadySender(): Promise<string | null> {
   const senders = await db
     .select()
     .from(whatsappSenders)
@@ -26,11 +24,36 @@ async function deliver(phoneNumber: string, message: string): Promise<boolean> {
 
   for (const sender of senders) {
     const ready = await ensureConnected(sender.id, sender.phoneNumber);
-    if (!ready) continue;
-    const sent = await sendMessage(sender.id, phoneNumber, message);
-    if (sent) return true;
+    if (ready) return sender.id;
   }
-  return false;
+  return null;
+}
+
+/**
+ * Pick an active sender (round-robin by priority) and deliver a plain message.
+ * Uses ensureConnected() so a sender whose socket was lost on a server restart
+ * is transparently revived from its on-disk session before sending.
+ */
+async function deliver(phoneNumber: string, message: string): Promise<boolean> {
+  const senderId = await pickReadySender();
+  if (!senderId) return false;
+  return sendMessage(senderId, phoneNumber, message);
+}
+
+/**
+ * Deliver an OTP as TWO plain-text messages from the SAME sender: an info
+ * message, then the bare code on its own. We deliberately do NOT use WhatsApp's
+ * interactive "Copy code" button here — Baileys is unofficial and many clients
+ * render that as an undecodable "Waiting for this message" bubble, hiding the
+ * code. A bare-code text message is universally readable and one-tap copyable.
+ */
+export async function deliverOtp(phoneNumber: string, code: string): Promise<boolean> {
+  const cleanPhone = phoneNumber.replace(/\D/g, "");
+  const senderId = await pickReadySender();
+  if (!senderId) return false;
+
+  await sendMessage(senderId, cleanPhone, otpInfo(OTP_EXPIRY_MINUTES));
+  return sendMessage(senderId, cleanPhone, otpCodeOnly(code));
 }
 
 export async function sendOTP(phoneNumber: string): Promise<string | null> {
@@ -60,10 +83,7 @@ export async function sendOTP(phoneNumber: string): Promise<string | null> {
     expiresAt,
   });
 
-  const sent = await deliver(
-    cleanPhone,
-    `Your OTP code is:\n\n${code}\n\nThis code is valid for ${OTP_EXPIRY_MINUTES} minutes.\nDo not share this code with anyone.`
-  );
+  const sent = await deliverOtp(cleanPhone, code);
 
   return sent ? code : null;
 }
@@ -112,6 +132,48 @@ export async function sendCustomMessage(
   return deliver(phoneNumber.replace(/\D/g, ""), message);
 }
 
+/**
+ * Create (or refresh) a pairing code for a number and return it. Any previous
+ * unverified pairings for the number are cleared so only the newest code is live.
+ */
+export async function createPairing(phoneNumber: string): Promise<string> {
+  const cleanPhone = phoneNumber.replace(/\D/g, "");
+  const code = generateOTP();
+  const expiresAt = new Date(Date.now() + PAIRING_EXPIRY_MINUTES * 60 * 1000);
+
+  await db.delete(waPairings).where(eq(waPairings.phoneNumber, cleanPhone));
+  await db.insert(waPairings).values({ phoneNumber: cleanPhone, code, expiresAt });
+
+  return code;
+}
+
+/**
+ * Check whether `code` matches a live (unverified, unexpired) pairing for the
+ * number. On match the pairing is marked verified and true is returned.
+ */
+export async function verifyPairing(phoneNumber: string, code: string): Promise<boolean> {
+  const cleanPhone = phoneNumber.replace(/\D/g, "");
+  const clean = code.replace(/\D/g, "");
+
+  const [pairing] = await db
+    .select()
+    .from(waPairings)
+    .where(
+      and(
+        eq(waPairings.phoneNumber, cleanPhone),
+        eq(waPairings.verified, false),
+        gt(waPairings.expiresAt, new Date())
+      )
+    )
+    .orderBy(desc(waPairings.createdAt))
+    .limit(1);
+
+  if (!pairing || pairing.code !== clean) return false;
+
+  await db.update(waPairings).set({ verified: true }).where(eq(waPairings.id, pairing.id));
+  return true;
+}
+
 export async function getActiveSenders() {
   return db
     .select()
@@ -137,4 +199,5 @@ export async function isSenderNumber(phoneNumber: string): Promise<boolean> {
 
 export async function cleanupExpiredOTP() {
   await db.delete(otpTokens).where(lt(otpTokens.expiresAt, new Date()));
+  await db.delete(waPairings).where(lt(waPairings.expiresAt, new Date()));
 }

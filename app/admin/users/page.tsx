@@ -8,6 +8,9 @@ import { apiFetch } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { useConfirm } from "@/components/admin/confirm-dialog";
+import { notify } from "@/lib/system/notify-store";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
 import {
   UserPlus,
@@ -15,12 +18,9 @@ import {
   Trash2,
   LogIn,
   Loader2,
-  AlertCircle,
-  CheckCircle,
   Search,
   Shield,
   User,
-  MoreHorizontal,
   Eye,
   Edit,
   Save,
@@ -44,6 +44,7 @@ interface AdminUser {
 export default function AdminUsersPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [editForm, setEditForm] = useState({
@@ -68,8 +69,6 @@ export default function AdminUsersPage() {
     });
   }, []);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionError, setActionError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["admin-users"],
@@ -85,9 +84,11 @@ export default function AdminUsersPage() {
       (u.email && u.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  function showSuccess(msg: string) {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(""), 3000);
+  function ok(msg: string) {
+    notify({ title: msg, tone: "success" });
+  }
+  function fail(msg: string) {
+    notify({ title: msg, tone: "error" });
   }
 
   async function createUser() {
@@ -109,7 +110,7 @@ export default function AdminUsersPage() {
       }
       setShowCreate(false);
       setForm({ username: "", email: "", password: "", quotaGB: 10 });
-      showSuccess("User created successfully");
+      ok("User created successfully");
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     } catch {
       setFormError("Connection failed");
@@ -118,56 +119,82 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function suspendUser(id: string, status: "active" | "suspended") {
+  async function suspendUser(id: string, status: "active" | "suspended", reason?: string) {
     setActionLoading(id);
-    setActionError("");
     try {
-      let suspendReason: string | undefined;
-      if (status === "suspended") {
-        const reason = window.prompt("Suspension reason (shown to the user on login):", "Policy violation");
-        if (reason === null) {
-          setActionLoading(null);
-          return;
-        }
-        suspendReason = reason.trim() || "Suspended by administrator";
-      }
       const res = await apiFetch("/api/admin/users", {
         method: "PATCH",
-        body: JSON.stringify({ id, status, suspendReason: suspendReason ?? null }),
+        body: JSON.stringify({
+          id,
+          status,
+          suspendReason: status === "suspended" ? (reason || "Suspended by administrator") : null,
+        }),
       });
       if (!res.success) {
-        setActionError(res.error ?? "Failed to update status");
+        fail(res.error ?? "Failed to update status");
         return;
       }
-      showSuccess(`User ${status === "suspended" ? "suspended" : "activated"}`);
+      ok(`User ${status === "suspended" ? "suspended" : "activated"}`);
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     } catch {
-      setActionError("Connection failed");
+      fail("Connection failed");
     } finally {
       setActionLoading(null);
     }
   }
 
   async function deleteUser(id: string) {
-    if (!confirm("Delete this user and all their data?")) return;
     setActionLoading(id);
-    setActionError("");
     try {
       const res = await apiFetch("/api/admin/users", {
         method: "DELETE",
         body: JSON.stringify({ id, deleteData: true }),
       });
       if (!res.success) {
-        setActionError(res.error ?? "Failed to delete user");
+        fail(res.error ?? "Failed to delete user");
         return;
       }
-      showSuccess("User deleted");
+      ok("User deleted");
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     } catch {
-      setActionError("Connection failed");
+      fail("Connection failed");
     } finally {
       setActionLoading(null);
     }
+  }
+
+  /** Prompt for a suspension reason, then suspend. Activation needs no reason. */
+  function toggleSuspend(user: AdminUser) {
+    if (user.status === "active") {
+      confirm.open(
+        {
+          title: `Suspend ${user.username}?`,
+          message: "The user will be signed out and blocked from logging in until reactivated.",
+          confirmLabel: "Suspend user",
+          danger: true,
+          reason: {
+            label: "Reason (shown to the user on login)",
+            placeholder: "Policy violation",
+            defaultValue: "Policy violation",
+          },
+        },
+        (reason) => suspendUser(user.id, "suspended", reason)
+      );
+    } else {
+      void suspendUser(user.id, "active");
+    }
+  }
+
+  function confirmDelete(user: AdminUser) {
+    confirm.open(
+      {
+        title: `Delete ${user.username}?`,
+        message: "This permanently deletes the user and all their files. This cannot be undone.",
+        confirmLabel: "Delete permanently",
+        danger: true,
+      },
+      () => deleteUser(user.id)
+    );
   }
 
   function startEdit(user: AdminUser) {
@@ -185,7 +212,6 @@ export default function AdminUsersPage() {
   async function saveEditUser() {
     if (!editingUser) return;
     setActionLoading(editingUser.id);
-    setActionError("");
     try {
       const body: Record<string, unknown> = {
         id: editingUser.id,
@@ -201,14 +227,14 @@ export default function AdminUsersPage() {
         body: JSON.stringify(body),
       });
       if (!res.success) {
-        setActionError(res.error ?? "Failed to update user");
+        fail(res.error ?? "Failed to update user");
         return;
       }
-      showSuccess("User updated successfully");
+      ok("User updated successfully");
       setEditingUser(null);
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     } catch {
-      setActionError("Connection failed");
+      fail("Connection failed");
     } finally {
       setActionLoading(null);
     }
@@ -222,65 +248,46 @@ export default function AdminUsersPage() {
         body: JSON.stringify({ userId: id }),
       });
       if (!res.success) {
-        setActionError(res.error ?? "Failed to impersonate");
+        fail(res.error ?? "Failed to impersonate");
         return;
       }
       router.push("/dashboard");
       router.refresh();
     } catch {
-      setActionError("Connection failed");
+      fail("Connection failed");
     } finally {
       setActionLoading(null);
     }
   }
 
   return (
-    <div>
-      {/* Toolbar */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-          <Input
-            placeholder="Search users..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 h-10"
-          />
-        </div>
-        <Button onClick={() => { setShowCreate(!showCreate); setFormError(""); }} className="gap-1.5">
-          <UserPlus className="h-4 w-4" /> Add User
-        </Button>
+    <div className="space-y-6">
+      <AdminPageHeader
+        title="User Management"
+        subtitle="Create, edit, suspend, and impersonate platform users"
+        actions={
+          <Button onClick={() => { setShowCreate(!showCreate); setFormError(""); }} className="gap-1.5">
+            <UserPlus className="h-4 w-4" /> Add User
+          </Button>
+        }
+      />
+
+      {/* Search */}
+      <div className="relative max-w-xs">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+        <Input
+          placeholder="Search users..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-9 h-10"
+        />
       </div>
-
-      {/* Messages */}
-      {successMsg && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400"
-        >
-          <CheckCircle className="h-4 w-4 shrink-0" />
-          {successMsg}
-        </motion.div>
-      )}
-
-      {actionError && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500"
-        >
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          {actionError}
-        </motion.div>
-      )}
 
       {/* Create User Form */}
       {showCreate && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
         >
           <Card className="border-border/50">
             <CardHeader>
@@ -432,7 +439,7 @@ export default function AdminUsersPage() {
                         className="h-8 w-8 rounded-lg text-muted-foreground/60 hover:text-warning hover:bg-warning/10"
                         title="Suspend/Activate"
                         disabled={isBusy}
-                        onClick={() => suspendUser(user.id, user.status === "active" ? "suspended" : "active")}
+                        onClick={() => toggleSuspend(user)}
                       >
                         <Ban className="h-3.5 w-3.5" />
                       </Button>
@@ -442,7 +449,7 @@ export default function AdminUsersPage() {
                         className="h-8 w-8 rounded-lg text-muted-foreground/60 hover:text-danger hover:bg-danger/10"
                         title="Delete"
                         disabled={isBusy}
-                        onClick={() => deleteUser(user.id)}
+                        onClick={() => confirmDelete(user)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -533,9 +540,6 @@ export default function AdminUsersPage() {
                 />
                 Force password reset on next login
               </label>
-              {actionError && (
-                <p className="text-sm text-red-500">{actionError}</p>
-              )}
               <div className="flex justify-end gap-2">
                 <Button variant="secondary" onClick={() => setEditingUser(null)}>
                   Cancel
@@ -553,6 +557,8 @@ export default function AdminUsersPage() {
           </motion.div>
         </div>
       )}
+
+      {confirm.element}
     </div>
   );
 }

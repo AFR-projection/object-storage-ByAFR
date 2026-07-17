@@ -9,6 +9,7 @@ import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { logActivity } from "@/lib/auth/audit";
 import { validatePasswordStrength } from "@/lib/security/password-policy";
 import { validateCsrf } from "@/lib/security";
+import { notifyUser } from "@/lib/whatsapp/notify-user";
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1).optional(),
@@ -75,6 +76,7 @@ export async function PUT(request: NextRequest) {
       await logActivity(user, "password_change", {
         metadata: { changedBy: "force_reset" },
       });
+      void notifyUser(user.id, { type: "password_changed", at: new Date() });
       return apiSuccess({
         message: "Password updated. You can continue using the app.",
         staySignedIn: true,
@@ -85,6 +87,7 @@ export async function PUT(request: NextRequest) {
     await logActivity(user, "password_change", {
       metadata: { changedBy: "user" },
     });
+    void notifyUser(user.id, { type: "password_changed", at: new Date() });
 
     return apiSuccess({
       message: "Password changed successfully. Please log in again.",

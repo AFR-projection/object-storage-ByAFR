@@ -222,9 +222,8 @@ export async function initWAClient(
         const from = phone.replace(/\D/g, "");
         console.log(`[WA] incoming from ${from} (jid=${remoteJid}): ${text.slice(0, 40)}`);
         const reply = await handleIncomingMessage(from, text);
-        // Reply to the phone-number JID (proven deliverable); fall back to the
-        // original JID. WhatsApp threads the LID and PN chats together, so it
-        // lands in the same conversation the user messaged from.
+        // Reply (acknowledgement only) to the phone-number JID; fall back to the
+        // original JID. Any OTP is delivered inside the handler as two messages.
         if (reply) {
           const replyTo = senderPn ?? remoteJid;
           const ok = await sendMessage(senderId, replyTo, reply);
