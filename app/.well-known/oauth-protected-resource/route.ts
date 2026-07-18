@@ -1,9 +1,10 @@
 import { buildProtectedResourceMetadata } from "@/lib/oauth/metadata";
+import { resolvePublicOrigin } from "@/lib/env/runtime";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const origin = new URL(request.url).origin;
+  const origin = resolvePublicOrigin(request);
   return Response.json(buildProtectedResourceMetadata(origin), {
     headers: {
       "Cache-Control": "public, max-age=3600",

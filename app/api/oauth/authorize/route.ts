@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
+import { resolvePublicOrigin } from "@/lib/env/runtime";
 import { validateOAuthClientRedirect } from "@/lib/oauth/clients";
 import { parseScopes } from "@/lib/oauth/constants";
 import { oauthError } from "@/lib/oauth/http";
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
 
   parseScopes(scope);
 
+  const publicOrigin = resolvePublicOrigin(request);
   const session = await getSessionUser();
   const consentParams = new URLSearchParams({
     client_id: clientId,
@@ -46,12 +48,12 @@ export async function GET(request: NextRequest) {
 
   if (!session) {
     const loginNext = `/oauth/consent?${consentParams.toString()}`;
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL("/login", publicOrigin);
     loginUrl.searchParams.set("next", loginNext);
     return NextResponse.redirect(loginUrl);
   }
 
-  const consentUrl = new URL("/oauth/consent", request.url);
+  const consentUrl = new URL("/oauth/consent", publicOrigin);
   consentParams.forEach((v, k) => consentUrl.searchParams.set(k, v));
   return NextResponse.redirect(consentUrl);
 }

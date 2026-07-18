@@ -1,8 +1,24 @@
-import { appPublicUrl } from "@/lib/env/runtime";
+import { appPublicUrl, isInternalHostname, resolvePublicOrigin } from "@/lib/env/runtime";
 import { OAUTH_SCOPES, oauthBaseUrl, mcpResourceUrl } from "@/lib/oauth/constants";
 
 export function getOAuthIssuer(fallbackOrigin?: string): string {
-  return appPublicUrl() || oauthBaseUrl(fallbackOrigin);
+  const env = appPublicUrl();
+  if (env) {
+    try {
+      if (!isInternalHostname(new URL(env).hostname)) return env;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (fallbackOrigin) {
+    try {
+      const origin = fallbackOrigin.replace(/\/$/, "");
+      if (!isInternalHostname(new URL(origin).hostname)) return origin;
+    } catch {
+      /* ignore */
+    }
+  }
+  return env || oauthBaseUrl(fallbackOrigin);
 }
 
 export function buildAuthorizationServerMetadata(fallbackOrigin?: string) {

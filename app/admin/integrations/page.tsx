@@ -9,7 +9,7 @@ export default function AdminIntegrationsPage() {
     <div className="space-y-6">
       <AdminPageHeader
         title="Platform Integrations"
-        subtitle="Master connection hub — API, MCP, OpenAPI plugins for full platform control"
+        subtitle="Copy MCP URL, OAuth login, API keys — satu halaman untuk semua metode connect"
         actions={
           <div className="flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400">
             <Crown className="h-3.5 w-3.5" />
