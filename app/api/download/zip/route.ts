@@ -5,7 +5,8 @@ import { z } from "zod";
 import { inArray, and, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { files } from "@/lib/db/schema";
-import { requireAuth, getClientIp } from "@/lib/auth/session";
+import { requireAuthOrApiKey } from "@/lib/auth/api-key";
+import { getClientIp } from "@/lib/auth/session";
 import { canAccessUserResource, getEffectiveUserId } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
 import { downloadFromR2Stream } from "@/lib/storage/r2";
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
       return apiError("Invalid CSRF token", 403);
     }
 
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(request, ["download"]);
     const userId = getEffectiveUserId(sessionUser);
     const body = schema.parse(await request.json());
     const ip = getClientIp(request);

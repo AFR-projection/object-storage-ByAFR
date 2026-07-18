@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { Readable } from "stream";
-import { requireAuth, getClientIp } from "@/lib/auth/session";
+import { requireAuthOrApiKey } from "@/lib/auth/api-key";
+import { getClientIp } from "@/lib/auth/session";
 import { getAccessibleFile } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
 import { getPresignedDownloadUrl, objectExists, downloadFromR2Stream, encodeContentDispositionFilename } from "@/lib/storage/r2";
@@ -49,7 +50,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(request, ["download"]);
     const { id } = await params;
     const ip = getClientIp(request);
 

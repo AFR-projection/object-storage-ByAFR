@@ -3,6 +3,7 @@ import { eq, and, isNull, isNotNull, desc, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, recalculateUsedBytes } from "@/lib/db";
 import { folders, files } from "@/lib/db/schema";
+import { requireAuthOrApiKey } from "@/lib/auth/api-key";
 import { requireAuth, getClientIp } from "@/lib/auth/session";
 import {
   getEffectiveUserId,
@@ -37,7 +38,7 @@ async function buildPath(parentId: string | null, name: string, userId: string) 
 
 export async function GET(request: NextRequest) {
   try {
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(request, ["read"]);
     const parentId = request.nextUrl.searchParams.get("parentId");
     const trash = request.nextUrl.searchParams.get("trash") === "true";
 

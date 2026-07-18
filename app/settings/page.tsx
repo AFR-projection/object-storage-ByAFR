@@ -15,6 +15,7 @@ import {
   PasswordSection as SharedPasswordSection,
   TwoFactorSection as SharedTwoFactorSection,
 } from "@/components/account/account-security-sections";
+import { ApiKeysSection } from "@/components/settings/api-keys-section";
 interface SessionUser {
   id: string;
   username: string;
@@ -74,7 +75,7 @@ function SettingsContent({ user }: { user: SessionUser }) {
     {
       id: "api-keys",
       title: "API Keys",
-      description: "Programmatic access with scoped keys",
+      description: "Connect AI agents & external tools",
       icon: Key,
       gradient: "from-sky-500 to-blue-600",
       component: <ApiKeysSection />,
@@ -179,157 +180,6 @@ function PasswordSection() {
 
 function TwoFactorSection({ enabled }: { enabled: boolean }) {
   return <SharedTwoFactorSection enabled={enabled} />;
-}
-
-// ─── API Keys Section ─────────────────────────────────────────────────────────
-
-type ApiKeyRow = {
-  id: string;
-  name: string;
-  keyPrefix: string;
-  scopes: string[];
-  lastUsedAt: string | Date | null;
-  expiresAt: string | Date | null;
-  createdAt: string | Date;
-};
-
-function ApiKeysSection() {
-  const [name, setName] = useState("");
-  const [scopes, setScopes] = useState<string[]>(["read"]);
-  const [createdRaw, setCreatedRaw] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ["api-keys"],
-    queryFn: async () => {
-      const res = await apiFetch<{ keys: ApiKeyRow[] }>("/api/settings/api-keys");
-      if (!res.success) throw new Error(res.error ?? "Failed to load");
-      return res.data!.keys;
-    },
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiFetch<{ key: ApiKeyRow & { rawKey: string } }>("/api/settings/api-keys", {
-        method: "POST",
-        body: JSON.stringify({ name, scopes }),
-      });
-      if (!res.success) throw new Error(res.error ?? "Failed to create");
-      return res.data!.key;
-    },
-    onSuccess: (key) => {
-      setCreatedRaw(key.rawKey);
-      setName("");
-      setError(null);
-      refetch();
-    },
-    onError: (err: Error) => setError(err.message),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiFetch("/api/settings/api-keys", {
-        method: "DELETE",
-        body: JSON.stringify({ id }),
-      });
-      if (!res.success) throw new Error(res.error ?? "Failed to delete");
-    },
-    onSuccess: () => refetch(),
-  });
-
-  function toggleScope(scope: string) {
-    setScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!name.trim() || scopes.length === 0) return;
-          createMutation.mutate();
-        }}
-      >
-        <Input
-          placeholder="Key name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-        <div className="flex flex-wrap gap-2">
-          {(["read", "upload", "delete"] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => toggleScope(s)}
-              className={cn(
-                "rounded-lg border px-3 py-1.5 text-xs font-medium capitalize",
-                scopes.includes(s) ? "border-accent bg-accent/10 text-accent" : "border-border text-muted-foreground"
-              )}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-        <Button type="submit" disabled={createMutation.isPending || !name.trim() || scopes.length === 0} className="w-full">
-          {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-          Create API Key
-        </Button>
-      </form>
-
-      {createdRaw && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
-          <p className="mb-1 text-xs font-medium text-amber-500">Copy now — shown once</p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 break-all text-xs">{createdRaw}</code>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={() => navigator.clipboard.writeText(createdRaw)}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {error && <p className="text-xs text-danger">{error}</p>}
-
-      {isLoading ? (
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-      ) : (
-        <ul className="space-y-2">
-          {(data ?? []).length === 0 && (
-            <li className="text-xs text-muted-foreground">No API keys yet.</li>
-          )}
-          {(data ?? []).map((k) => (
-            <li key={k.id} className="flex items-center justify-between gap-2 rounded-lg bg-surface-hover/50 px-3 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{k.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {k.keyPrefix}… · {k.scopes.join(", ")}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-danger"
-                onClick={() => {
-                  if (confirm("Revoke this API key?")) deleteMutation.mutate(k.id);
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 // ─── Webhooks Section ─────────────────────────────────────────────────────────

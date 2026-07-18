@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { fileContents, changeHistory } from "@/lib/db/schema";
-import { requireAuth, getClientIp } from "@/lib/auth/session";
+import { requireAuthOrApiKey } from "@/lib/auth/api-key";
+import { getClientIp } from "@/lib/auth/session";
 import { getAccessibleFile, getEffectiveUserId } from "@/lib/auth/permissions";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf } from "@/lib/security";
@@ -15,7 +16,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(_request, ["read"]);
     const { id } = await params;
 
     const accessible = await getAccessibleFile(sessionUser, id);
@@ -47,7 +48,7 @@ export async function PUT(
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
 
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(request, ["write"]);
     const { id } = await params;
     const body = updateSchema.parse(await request.json());
     const ip = getClientIp(request);

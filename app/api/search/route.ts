@@ -3,7 +3,7 @@ import { eq, and, isNull, ilike, gte, lte, desc, lt } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { files } from "@/lib/db/schema";
-import { requireAuth } from "@/lib/auth/session";
+import { requireAuthOrApiKey } from "@/lib/auth/api-key";
 import { getEffectiveUserId } from "@/lib/auth/permissions";
 import { cacheGet, cacheSet } from "@/lib/cache/redis";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
@@ -26,7 +26,7 @@ const searchSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    const sessionUser = await requireAuth();
+    const sessionUser = await requireAuthOrApiKey(request, ["read"]);
     const userId = getEffectiveUserId(sessionUser);
     const params = searchSchema.parse(Object.fromEntries(request.nextUrl.searchParams));
 

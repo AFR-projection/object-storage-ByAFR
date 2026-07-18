@@ -179,9 +179,10 @@ export async function PATCH(request: NextRequest) {
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
 
-    const sessionUser = await requireAuth();
-    const userId = getEffectiveUserId(sessionUser);
     const body = patchSchema.parse(await request.json());
+    const patchScope = body.action === "delete" ? (["delete"] as const) : (["write"] as const);
+    const sessionUser = await requireAuthOrApiKey(request, [...patchScope]);
+    const userId = getEffectiveUserId(sessionUser);
     const ip = getClientIp(request);
 
     const [file] = await db.select().from(files).where(eq(files.id, body.id)).limit(1);

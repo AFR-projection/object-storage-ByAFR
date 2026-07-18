@@ -1,12 +1,81 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, count } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { apiKeys, users, type User } from "@/lib/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { AuthError, getSessionUser, type SessionUser } from "@/lib/auth/session";
+import { checkRateLimit, peekRateLimit } from "@/lib/security";
 
-export type ApiKeyScope = "read" | "upload" | "delete";
-export const API_KEY_SCOPES: ApiKeyScope[] = ["read", "upload", "delete"];
+export type ApiKeyScope = "read" | "upload" | "download" | "delete" | "write" | "full";
+
+export const API_KEY_SCOPES: ApiKeyScope[] = [
+  "read",
+  "upload",
+  "download",
+  "delete",
+  "write",
+  "full",
+];
+
+export const API_KEY_SCOPE_LABELS: Record<ApiKeyScope, { label: string; description: string }> = {
+  read: {
+    label: "Read",
+    description: "List files, folders, search, and file metadata",
+  },
+  upload: {
+    label: "Upload",
+    description: "Upload files via presign → complete flow",
+  },
+  download: {
+    label: "Download",
+    description: "Download individual files and zip archives",
+  },
+  delete: {
+    label: "Delete",
+    description: "Soft delete and permanently remove files",
+  },
+  write: {
+    label: "Write",
+    description: "Rename, move, favorite, restore, and edit notes",
+  },
+  full: {
+    label: "Full access",
+    description: "All storage API permissions (excluding admin routes)",
+  },
+};
+
+export const API_KEY_PRESETS = {
+  ai_agent: {
+    name: "AI Agent",
+    description: "Best for AI assistants — read, upload, download, and edit notes",
+    scopes: ["read", "upload", "download", "write"] as ApiKeyScope[],
+    expiresInDays: 90,
+  },
+  read_only: {
+    name: "Read only",
+    description: "Browse and search files without making changes",
+    scopes: ["read"] as ApiKeyScope[],
+    expiresInDays: null as number | null,
+  },
+  upload_bot: {
+    name: "Upload bot",
+    description: "Automated uploads with file listing",
+    scopes: ["read", "upload"] as ApiKeyScope[],
+    expiresInDays: 365,
+  },
+  full_access: {
+    name: "Full access",
+    description: "Complete programmatic access (use with caution)",
+    scopes: ["full"] as ApiKeyScope[],
+    expiresInDays: 90,
+  },
+} as const;
+
+export type ApiKeyPreset = keyof typeof API_KEY_PRESETS;
+
+export const MAX_API_KEYS_PER_USER = 10;
+const FAILED_AUTH_MAX = 20;
+const FAILED_AUTH_WINDOW_MS = 15 * 60_000;
 
 export type SessionUserFromApiKey = User & {
   effectiveUserId: string;
@@ -37,12 +106,40 @@ export function extractBearerToken(request: Request): string | null {
   return token || null;
 }
 
+export function keyHasScope(keyScopes: string[], required: ApiKeyScope): boolean {
+  if (keyScopes.includes("full")) return true;
+  return keyScopes.includes(required);
+}
+
+export function keyHasAnyScope(keyScopes: string[], required: ApiKeyScope[]): boolean {
+  return required.some((scope) => keyHasScope(keyScopes, scope));
+}
+
+export function normalizeApiKeyScopes(scopes: string[]): ApiKeyScope[] {
+  return scopes.filter((s): s is ApiKeyScope =>
+    (API_KEY_SCOPES as string[]).includes(s)
+  );
+}
+
+export async function countApiKeys(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
+    .from(apiKeys)
+    .where(eq(apiKeys.userId, userId));
+  return row?.total ?? 0;
+}
+
 export async function createApiKey(
   userId: string,
   name: string,
   scopes: ApiKeyScope[],
   expiresAt?: Date | null
 ): Promise<{ id: string; name: string; keyPrefix: string; scopes: string[]; rawKey: string; expiresAt: Date | null; createdAt: Date }> {
+  const existing = await countApiKeys(userId);
+  if (existing >= MAX_API_KEYS_PER_USER) {
+    throw new AuthError(`Maximum ${MAX_API_KEYS_PER_USER} API keys allowed`, 400);
+  }
+
   const { raw, prefix } = generateRawKey();
   const keyHash = await hashPassword(raw);
 
@@ -102,6 +199,12 @@ export async function authenticateApiKey(
   }
 
   const prefix = rawKey.slice(0, 12);
+  const failKey = `apikey:fail:${prefix}`;
+  const blocked = await peekRateLimit(failKey, FAILED_AUTH_MAX, FAILED_AUTH_WINDOW_MS);
+  if (!blocked.allowed) {
+    throw new AuthError("Too many failed authentication attempts", 429);
+  }
+
   const [keyRow] = await db
     .select()
     .from(apiKeys)
@@ -109,6 +212,7 @@ export async function authenticateApiKey(
     .limit(1);
 
   if (!keyRow) {
+    void checkRateLimit(failKey, FAILED_AUTH_MAX, FAILED_AUTH_WINDOW_MS);
     throw new AuthError("Unauthorized");
   }
 
@@ -118,11 +222,12 @@ export async function authenticateApiKey(
 
   const valid = await verifyPassword(rawKey, keyRow.keyHash);
   if (!valid) {
+    void checkRateLimit(failKey, FAILED_AUTH_MAX, FAILED_AUTH_WINDOW_MS);
     throw new AuthError("Unauthorized");
   }
 
   for (const scope of requiredScopes) {
-    if (!keyRow.scopes.includes(scope)) {
+    if (!keyHasScope(keyRow.scopes, scope)) {
       throw new AuthError(`Missing scope: ${scope}`, 403);
     }
   }

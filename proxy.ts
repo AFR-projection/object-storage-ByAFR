@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { hstsEnabled } from "@/lib/env/runtime";
+import { isBearerApiKeyRequest } from "@/lib/auth/api-key";
 
 const publicPaths = [
   "/",
@@ -60,6 +61,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const sessionCookie = request.cookies.get("storage_session");
+  const hasApiKey = isBearerApiKeyRequest(request);
   const ua = request.headers.get("user-agent");
 
   // Bot protection: sensitive API routes only (not pages, login, or CSRF)
@@ -67,7 +69,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/") &&
     isSensitiveApi(pathname) &&
     isBot(ua) &&
-    !sessionCookie
+    !sessionCookie &&
+    !hasApiKey
   ) {
     return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
   }
@@ -76,7 +79,8 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (!sessionCookie && pathname.startsWith("/api/")) {
+  // Bearer sk_* API keys authenticate at the route layer — no session cookie required.
+  if (!sessionCookie && pathname.startsWith("/api/") && !hasApiKey) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
