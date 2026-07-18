@@ -3,7 +3,8 @@ import { eq, desc, count, sum, and, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { users, files, activityLogs } from "@/lib/db/schema";
-import { requireMaster, getClientIp } from "@/lib/auth/session";
+import { requireMasterOrApiKey } from "@/lib/auth/api-key";
+import { getClientIp } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf } from "@/lib/security";
@@ -13,9 +14,9 @@ import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { cacheDelPattern } from "@/lib/cache/redis";
 import { defaultQuotaBytes, getAdminSettings } from "@/lib/admin-settings";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    await requireMaster();
+    await requireMasterOrApiKey(request, "users");
 
     const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
     return apiSuccess({ users: allUsers });
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
 
-    const master = await requireMaster();
+    const master = await requireMasterOrApiKey(request, "users");
     const body = createUserSchema.parse(await request.json());
     const ip = getClientIp(request);
     const settings = await getAdminSettings();
@@ -91,7 +92,7 @@ export async function PATCH(request: NextRequest) {
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
 
-    const master = await requireMaster();
+    const master = await requireMasterOrApiKey(request, "users");
     const body = updateUserSchema.parse(await request.json());
     const ip = getClientIp(request);
 
@@ -171,7 +172,7 @@ export async function DELETE(request: NextRequest) {
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
 
-    const master = await requireMaster();
+    const master = await requireMasterOrApiKey(request, "users");
     const { id, deleteData } = z
       .object({ id: z.string().uuid(), deleteData: z.boolean().default(false) })
       .parse(await request.json());

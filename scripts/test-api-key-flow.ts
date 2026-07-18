@@ -9,8 +9,11 @@ import { users } from "../lib/db/schema";
 import {
   authenticateApiKey,
   createApiKey,
+  createMasterApiKey,
   deleteApiKey,
+  deleteMasterApiKey,
   keyHasScope,
+  keyHasAdminArea,
 } from "../lib/auth/api-key";
 
 const BASE = (process.argv[2] ?? "http://localhost:3000").replace(/\/$/, "");
@@ -96,6 +99,40 @@ async function main() {
 
   const after = await api("/api/v1/me", key.rawKey);
   assert("Revoked key → 401", after.status === 401, `got ${after.status}`);
+
+  // ── Master key tests ──
+  const [master] = await db
+    .select({ id: users.id, username: users.username })
+    .from(users)
+    .where(eq(users.role, "master"))
+    .limit(1);
+
+  if (master) {
+    console.log(`\nMaster tests (${master.username}):\n`);
+    const mkey = await createMasterApiKey(master.id, "smoke-master", ["supreme"]);
+    assert("createMasterApiKey returns skm_ prefix", mkey.rawKey.startsWith("skm_"));
+    assert("keyHasAdminArea users", keyHasAdminArea(mkey.scopes, "users"));
+    assert("keyHasScope supreme → read", keyHasScope(mkey.scopes, "read"));
+
+    const mMe = await api("/api/v1/me", mkey.rawKey);
+    assert(
+      "GET /api/v1/me (master)",
+      mMe.status === 200 && mMe.json.data?.tier === "master",
+      mMe.json.error
+    );
+
+    const stats = await api("/api/admin/stats", mkey.rawKey);
+    assert("GET /api/admin/stats (supreme)", stats.status === 200 && stats.json.success, stats.json.error);
+
+    const usersApi = await api("/api/admin/users", mkey.rawKey);
+    assert("GET /api/admin/users (supreme)", usersApi.status === 200 && usersApi.json.success, usersApi.json.error);
+
+    await deleteMasterApiKey(master.id, mkey.id);
+    const mAfter = await api("/api/v1/me", mkey.rawKey);
+    assert("Revoked master key → 401", mAfter.status === 401, `got ${mAfter.status}`);
+  } else {
+    console.log("\n(no master account — skipping master key tests)\n");
+  }
 
   console.log("\n" + (process.exitCode ? "FAILED" : "ALL TESTS PASSED") + "\n");
 }

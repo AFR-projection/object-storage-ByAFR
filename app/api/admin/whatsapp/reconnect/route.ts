@@ -2,15 +2,14 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { whatsappSenders } from "@/lib/db/schema";
-import { requireAuth } from "@/lib/auth/session";
+import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { apiError, apiSuccess, handleApiError } from "@/lib/api/response";
 import { eq } from "drizzle-orm";
 import { disconnectWAClient, initWAClient } from "@/lib/whatsapp/whatsapp-client";
 
 export async function POST(request: NextRequest) {
   try {
-    const sessionUser = await requireAuth();
-    if (sessionUser.role !== "master") return apiError("Forbidden", 403);
+    await requireMasterOrApiKey(request, "whatsapp");
 
     const { id, method } = z
       .object({

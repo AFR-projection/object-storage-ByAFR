@@ -3,7 +3,7 @@ import { count } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { requireMaster } from "@/lib/auth/session";
+import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import {
@@ -33,9 +33,9 @@ const patchSchema = z
   })
   .strip();
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    await requireMaster();
+    await requireMasterOrApiKey(request, "settings");
     const settings = await getAdminSettings(true);
     const [userCount] = await db.select({ count: count() }).from(users);
 
@@ -56,7 +56,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
-    await requireMaster();
+    await requireMasterOrApiKey(request, "settings");
 
     const body = patchSchema.parse(await request.json());
     const updated = await updateAdminSettings(body);

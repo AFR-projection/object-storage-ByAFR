@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { eq, desc, count, sum, and, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, files, folders, activityLogs, sessions } from "@/lib/db/schema";
-import { requireMaster, getClientIp } from "@/lib/auth/session";
+import { requireMasterOrApiKey } from "@/lib/auth/api-key";
+import { getClientIp } from "@/lib/auth/session";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf } from "@/lib/security";
 import { validatePasswordStrength } from "@/lib/security/password-policy";
@@ -15,7 +16,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireMaster();
+    await requireMasterOrApiKey(request, "users");
     const { id } = await params;
 
     const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
@@ -83,7 +84,7 @@ export async function PATCH(
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
 
-    const master = await requireMaster();
+    const master = await requireMasterOrApiKey(request, "users");
     const { id } = await params;
     const body = await request.json();
     const ip = getClientIp(request);
@@ -170,7 +171,7 @@ export async function DELETE(
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
 
-    const master = await requireMaster();
+    const master = await requireMasterOrApiKey(request, "users");
     const { id } = await params;
     const { deleteData } = await request.json();
     const ip = getClientIp(request);

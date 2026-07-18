@@ -3,12 +3,12 @@ import { desc, eq, and, gte, count, isNull, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { activityLogs, users, files, activityActionEnum } from "@/lib/db/schema";
-import { requireMaster } from "@/lib/auth/session";
+import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireMaster();
+    await requireMasterOrApiKey(request, "monitoring");
 
     const [userCount] = await db.select({ total: count() }).from(users);
     const [fileCount] = await db
@@ -55,7 +55,7 @@ const logsSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    await requireMaster();
+    await requireMasterOrApiKey(request, "monitoring");
     const params = logsSchema.parse(await request.json());
 
     const conditions = [];

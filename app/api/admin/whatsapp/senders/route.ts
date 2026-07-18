@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { whatsappSenders } from "@/lib/db/schema";
-import { requireAuth } from "@/lib/auth/session";
+import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { apiError, apiSuccess, handleApiError } from "@/lib/api/response";
 import { z } from "zod";
 import { initWAClient, disconnectWAClient } from "@/lib/whatsapp/whatsapp-client";
@@ -19,10 +19,9 @@ const updateSenderSchema = z.object({
   priority: z.number().optional(),
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const sessionUser = await requireAuth();
-    if (sessionUser.role !== "master") return apiError("Forbidden", 403);
+    await requireMasterOrApiKey(request, "whatsapp");
 
     const senders = await db.select().from(whatsappSenders);
     return apiSuccess(senders);
@@ -33,8 +32,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const sessionUser = await requireAuth();
-    if (sessionUser.role !== "master") return apiError("Forbidden", 403);
+    await requireMasterOrApiKey(request, "whatsapp");
 
     const body = createSenderSchema.parse(await request.json());
     const cleanPhone = body.phoneNumber.replace(/\D/g, "");
@@ -62,8 +60,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const sessionUser = await requireAuth();
-    if (sessionUser.role !== "master") return apiError("Forbidden", 403);
+    await requireMasterOrApiKey(request, "whatsapp");
 
     const { id, ...updates } = (await request.json()) as {
       id: string;
@@ -83,8 +80,7 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const sessionUser = await requireAuth();
-    if (sessionUser.role !== "master") return apiError("Forbidden", 403);
+    await requireMasterOrApiKey(request, "whatsapp");
 
     const { id } = z.object({ id: z.string().uuid() }).parse(await request.json());
 

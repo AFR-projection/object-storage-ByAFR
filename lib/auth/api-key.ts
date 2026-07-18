@@ -1,9 +1,9 @@
-import { eq, and, desc, count } from "drizzle-orm";
+import { eq, and, desc, count, like } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { apiKeys, users, type User } from "@/lib/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { AuthError, getSessionUser, type SessionUser } from "@/lib/auth/session";
+import { AuthError, getSessionUser, requireMaster, type SessionUser } from "@/lib/auth/session";
 import { checkRateLimit, peekRateLimit } from "@/lib/security";
 
 export type ApiKeyScope = "read" | "upload" | "download" | "delete" | "write" | "full";
@@ -73,9 +73,129 @@ export const API_KEY_PRESETS = {
 
 export type ApiKeyPreset = keyof typeof API_KEY_PRESETS;
 
+export type AdminApiArea = "users" | "settings" | "stats" | "monitoring" | "shares" | "whatsapp";
+
+export type MasterApiKeyScope =
+  | ApiKeyScope
+  | "admin"
+  | "admin:users"
+  | "admin:settings"
+  | "admin:stats"
+  | "admin:monitoring"
+  | "admin:shares"
+  | "admin:whatsapp"
+  | "supreme";
+
+export const MASTER_API_KEY_SCOPES: MasterApiKeyScope[] = [
+  "supreme",
+  "admin",
+  "admin:users",
+  "admin:settings",
+  "admin:stats",
+  "admin:monitoring",
+  "admin:shares",
+  "admin:whatsapp",
+  "full",
+  "read",
+  "upload",
+  "download",
+  "delete",
+  "write",
+];
+
+export const MASTER_SCOPE_LABELS: Record<
+  MasterApiKeyScope,
+  { label: string; description: string; tier: "supreme" | "admin" | "storage" }
+> = {
+  supreme: {
+    label: "Supreme",
+    description: "Unrestricted platform control — storage + all admin APIs",
+    tier: "supreme",
+  },
+  admin: {
+    label: "Admin (all)",
+    description: "Full admin panel API access",
+    tier: "admin",
+  },
+  "admin:users": {
+    label: "Users",
+    description: "Create, update, suspend, delete users",
+    tier: "admin",
+  },
+  "admin:settings": {
+    label: "Settings",
+    description: "Platform configuration and maintenance mode",
+    tier: "admin",
+  },
+  "admin:stats": {
+    label: "Stats",
+    description: "Dashboard statistics and overview metrics",
+    tier: "admin",
+  },
+  "admin:monitoring": {
+    label: "Monitoring",
+    description: "System health and performance monitoring",
+    tier: "admin",
+  },
+  "admin:shares": {
+    label: "Shares",
+    description: "Manage all shared links platform-wide",
+    tier: "admin",
+  },
+  "admin:whatsapp": {
+    label: "WhatsApp",
+    description: "WhatsApp sender management and pairing",
+    tier: "admin",
+  },
+  full: { ...API_KEY_SCOPE_LABELS.full, tier: "storage" },
+  read: { ...API_KEY_SCOPE_LABELS.read, tier: "storage" },
+  upload: { ...API_KEY_SCOPE_LABELS.upload, tier: "storage" },
+  download: { ...API_KEY_SCOPE_LABELS.download, tier: "storage" },
+  delete: { ...API_KEY_SCOPE_LABELS.delete, tier: "storage" },
+  write: { ...API_KEY_SCOPE_LABELS.write, tier: "storage" },
+};
+
+export const MASTER_API_KEY_PRESETS = {
+  supreme_command: {
+    name: "Supreme Command",
+    description: "Total platform authority — the most powerful key possible",
+    scopes: ["supreme"] as MasterApiKeyScope[],
+    expiresInDays: 90,
+  },
+  platform_ai: {
+    name: "Platform AI",
+    description: "AI agent with full storage + user management + stats",
+    scopes: ["full", "admin:users", "admin:stats"] as MasterApiKeyScope[],
+    expiresInDays: 90,
+  },
+  ops_center: {
+    name: "Ops Center",
+    description: "Monitoring, stats, and system settings",
+    scopes: ["read", "admin:monitoring", "admin:stats", "admin:settings"] as MasterApiKeyScope[],
+    expiresInDays: 365,
+  },
+  user_governor: {
+    name: "User Governor",
+    description: "Full user lifecycle management",
+    scopes: ["admin:users", "admin:stats"] as MasterApiKeyScope[],
+    expiresInDays: 180,
+  },
+  automation_god: {
+    name: "Automation God Mode",
+    description: "Unrestricted automation — expires in 30 days for safety",
+    scopes: ["supreme"] as MasterApiKeyScope[],
+    expiresInDays: 30,
+  },
+} as const;
+
+export type MasterApiKeyPreset = keyof typeof MASTER_API_KEY_PRESETS;
+
 export const MAX_API_KEYS_PER_USER = 10;
+export const MAX_MASTER_API_KEYS = 25;
 const FAILED_AUTH_MAX = 20;
 const FAILED_AUTH_WINDOW_MS = 15 * 60_000;
+const MASTER_KEY_PREFIX = "skm_";
+const USER_KEY_PREFIX = "sk_";
 
 export type SessionUserFromApiKey = User & {
   effectiveUserId: string;
@@ -84,19 +204,28 @@ export type SessionUserFromApiKey = User & {
   authMethod: "api_key";
   apiKeyId: string;
   apiKeyScopes: string[];
+  apiKeyTier: "master" | "standard";
 };
 
-function generateRawKey(): { raw: string; prefix: string } {
+function generateRawKey(tier: "standard" | "master"): { raw: string; prefix: string } {
   const secret = nanoid(40);
-  const raw = `sk_${secret}`;
-  const prefix = raw.slice(0, 12);
-  return { raw, prefix };
+  if (tier === "master") {
+    const raw = `${MASTER_KEY_PREFIX}${secret}`;
+    return { raw, prefix: raw.slice(0, 13) };
+  }
+  const raw = `${USER_KEY_PREFIX}${secret}`;
+  return { raw, prefix: raw.slice(0, 12) };
+}
+
+export function isMasterApiKey(rawKey: string): boolean {
+  return rawKey.startsWith(MASTER_KEY_PREFIX);
 }
 
 export function isBearerApiKeyRequest(request: Request): boolean {
   const auth = request.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return false;
-  return auth.slice(7).trim().startsWith("sk_");
+  const token = auth.slice(7).trim();
+  return token.startsWith(USER_KEY_PREFIX) || token.startsWith(MASTER_KEY_PREFIX);
 }
 
 export function extractBearerToken(request: Request): string | null {
@@ -106,18 +235,36 @@ export function extractBearerToken(request: Request): string | null {
   return token || null;
 }
 
-export function keyHasScope(keyScopes: string[], required: ApiKeyScope): boolean {
+export function keyHasScope(keyScopes: string[], required: string): boolean {
+  if (keyScopes.includes("supreme")) return true;
+
+  if (required.startsWith("admin:") || required === "admin") {
+    if (keyScopes.includes("admin")) return true;
+    if (required === "admin") {
+      return keyScopes.some((s) => s.startsWith("admin:"));
+    }
+    return keyScopes.includes(required);
+  }
+
   if (keyScopes.includes("full")) return true;
   return keyScopes.includes(required);
 }
 
-export function keyHasAnyScope(keyScopes: string[], required: ApiKeyScope[]): boolean {
+export function keyHasAdminArea(keyScopes: string[], area: AdminApiArea): boolean {
+  return keyHasScope(keyScopes, `admin:${area}`);
+}
+
+export function keyHasAnyScope(keyScopes: string[], required: string[]): boolean {
   return required.some((scope) => keyHasScope(keyScopes, scope));
 }
 
 export function normalizeApiKeyScopes(scopes: string[]): ApiKeyScope[] {
-  return scopes.filter((s): s is ApiKeyScope =>
-    (API_KEY_SCOPES as string[]).includes(s)
+  return scopes.filter((s): s is ApiKeyScope => (API_KEY_SCOPES as string[]).includes(s));
+}
+
+export function normalizeMasterApiKeyScopes(scopes: string[]): MasterApiKeyScope[] {
+  return scopes.filter((s): s is MasterApiKeyScope =>
+    (MASTER_API_KEY_SCOPES as string[]).includes(s)
   );
 }
 
@@ -125,7 +272,15 @@ export async function countApiKeys(userId: string): Promise<number> {
   const [row] = await db
     .select({ total: count() })
     .from(apiKeys)
-    .where(eq(apiKeys.userId, userId));
+    .where(and(eq(apiKeys.userId, userId), like(apiKeys.keyPrefix, `${USER_KEY_PREFIX}%`)));
+  return row?.total ?? 0;
+}
+
+export async function countMasterApiKeys(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.userId, userId), like(apiKeys.keyPrefix, `${MASTER_KEY_PREFIX}%`)));
   return row?.total ?? 0;
 }
 
@@ -134,13 +289,13 @@ export async function createApiKey(
   name: string,
   scopes: ApiKeyScope[],
   expiresAt?: Date | null
-): Promise<{ id: string; name: string; keyPrefix: string; scopes: string[]; rawKey: string; expiresAt: Date | null; createdAt: Date }> {
+) {
   const existing = await countApiKeys(userId);
   if (existing >= MAX_API_KEYS_PER_USER) {
     throw new AuthError(`Maximum ${MAX_API_KEYS_PER_USER} API keys allowed`, 400);
   }
 
-  const { raw, prefix } = generateRawKey();
+  const { raw, prefix } = generateRawKey("standard");
   const keyHash = await hashPassword(raw);
 
   const [row] = await db
@@ -163,6 +318,50 @@ export async function createApiKey(
     rawKey: raw,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
+    tier: "standard" as const,
+  };
+}
+
+export async function createMasterApiKey(
+  userId: string,
+  name: string,
+  scopes: MasterApiKeyScope[],
+  expiresAt?: Date | null
+) {
+  const [owner] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!owner || owner.role !== "master") {
+    throw new AuthError("Only master accounts can create master API keys", 403);
+  }
+
+  const existing = await countMasterApiKeys(userId);
+  if (existing >= MAX_MASTER_API_KEYS) {
+    throw new AuthError(`Maximum ${MAX_MASTER_API_KEYS} master API keys allowed`, 400);
+  }
+
+  const { raw, prefix } = generateRawKey("master");
+  const keyHash = await hashPassword(raw);
+
+  const [row] = await db
+    .insert(apiKeys)
+    .values({
+      userId,
+      name,
+      keyPrefix: prefix,
+      keyHash,
+      scopes,
+      expiresAt: expiresAt ?? null,
+    })
+    .returning();
+
+  return {
+    id: row.id,
+    name: row.name,
+    keyPrefix: row.keyPrefix,
+    scopes: row.scopes,
+    rawKey: raw,
+    expiresAt: row.expiresAt,
+    createdAt: row.createdAt,
+    tier: "master" as const,
   };
 }
 
@@ -178,27 +377,67 @@ export async function listApiKeys(userId: string) {
       createdAt: apiKeys.createdAt,
     })
     .from(apiKeys)
-    .where(eq(apiKeys.userId, userId))
+    .where(and(eq(apiKeys.userId, userId), like(apiKeys.keyPrefix, `${USER_KEY_PREFIX}%`)))
+    .orderBy(desc(apiKeys.createdAt));
+}
+
+export async function listMasterApiKeys(userId: string) {
+  return db
+    .select({
+      id: apiKeys.id,
+      name: apiKeys.name,
+      keyPrefix: apiKeys.keyPrefix,
+      scopes: apiKeys.scopes,
+      lastUsedAt: apiKeys.lastUsedAt,
+      expiresAt: apiKeys.expiresAt,
+      createdAt: apiKeys.createdAt,
+    })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.userId, userId), like(apiKeys.keyPrefix, `${MASTER_KEY_PREFIX}%`)))
     .orderBy(desc(apiKeys.createdAt));
 }
 
 export async function deleteApiKey(userId: string, keyId: string): Promise<boolean> {
   const deleted = await db
     .delete(apiKeys)
-    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, userId)))
+    .where(
+      and(
+        eq(apiKeys.id, keyId),
+        eq(apiKeys.userId, userId),
+        like(apiKeys.keyPrefix, `${USER_KEY_PREFIX}%`)
+      )
+    )
     .returning({ id: apiKeys.id });
   return deleted.length > 0;
 }
 
+export async function deleteMasterApiKey(userId: string, keyId: string): Promise<boolean> {
+  const deleted = await db
+    .delete(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.id, keyId),
+        eq(apiKeys.userId, userId),
+        like(apiKeys.keyPrefix, `${MASTER_KEY_PREFIX}%`)
+      )
+    )
+    .returning({ id: apiKeys.id });
+  return deleted.length > 0;
+}
+
+function keyPrefixFromRaw(rawKey: string): string {
+  return isMasterApiKey(rawKey) ? rawKey.slice(0, 13) : rawKey.slice(0, 12);
+}
+
 export async function authenticateApiKey(
   rawKey: string,
-  requiredScopes: ApiKeyScope[] = []
+  requiredScopes: string[] = []
 ): Promise<SessionUserFromApiKey> {
-  if (!rawKey.startsWith("sk_")) {
+  if (!rawKey.startsWith(USER_KEY_PREFIX) && !rawKey.startsWith(MASTER_KEY_PREFIX)) {
     throw new AuthError("Unauthorized");
   }
 
-  const prefix = rawKey.slice(0, 12);
+  const prefix = keyPrefixFromRaw(rawKey);
   const failKey = `apikey:fail:${prefix}`;
   const blocked = await peekRateLimit(failKey, FAILED_AUTH_MAX, FAILED_AUTH_WINDOW_MS);
   if (!blocked.allowed) {
@@ -237,6 +476,11 @@ export async function authenticateApiKey(
     throw new AuthError("Unauthorized");
   }
 
+  const tier = isMasterApiKey(rawKey) ? "master" : "standard";
+  if (tier === "master" && user.role !== "master") {
+    throw new AuthError("Unauthorized");
+  }
+
   void db
     .update(apiKeys)
     .set({ lastUsedAt: new Date() })
@@ -250,16 +494,13 @@ export async function authenticateApiKey(
     authMethod: "api_key",
     apiKeyId: keyRow.id,
     apiKeyScopes: keyRow.scopes,
+    apiKeyTier: tier,
   };
 }
 
-/**
- * Session cookie auth OR Bearer `sk_*` API key.
- * SessionUserFromApiKey is structurally compatible with SessionUser.
- */
 export async function requireAuthOrApiKey(
   request: Request,
-  requiredScopes: ApiKeyScope[] = []
+  requiredScopes: string[] = []
 ): Promise<SessionUser> {
   if (isBearerApiKeyRequest(request)) {
     const token = extractBearerToken(request);
@@ -270,4 +511,25 @@ export async function requireAuthOrApiKey(
   const user = await getSessionUser();
   if (!user) throw new AuthError("Unauthorized");
   return user;
+}
+
+export async function requireMasterOrApiKey(
+  request: Request,
+  adminArea: AdminApiArea
+): Promise<SessionUser> {
+  if (isBearerApiKeyRequest(request)) {
+    const token = extractBearerToken(request);
+    if (!token) throw new AuthError("Unauthorized");
+    if (!isMasterApiKey(token)) {
+      throw new AuthError("Master API key required (skm_…)", 403);
+    }
+    const user = await authenticateApiKey(token, []);
+    if (user.role !== "master") throw new AuthError("Forbidden", 403);
+    if (!keyHasAdminArea(user.apiKeyScopes, adminArea)) {
+      throw new AuthError(`Missing scope: admin:${adminArea}`, 403);
+    }
+    return user;
+  }
+
+  return requireMaster();
 }

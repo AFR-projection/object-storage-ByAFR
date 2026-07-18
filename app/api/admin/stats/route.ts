@@ -2,12 +2,12 @@ import { NextRequest } from "next/server";
 import { eq, desc, count, sum, and, isNull, gte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, files, folders, activityLogs, shares, sessions } from "@/lib/db/schema";
-import { requireMaster } from "@/lib/auth/session";
+import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireMaster();
+    await requireMasterOrApiKey(request, "stats");
 
     // User stats
     const [userCount] = await db.select({ total: count() }).from(users);

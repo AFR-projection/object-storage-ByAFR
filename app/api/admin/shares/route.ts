@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { and, desc, eq, gte, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { shares, files, users } from "@/lib/db/schema";
-import { requireMaster, getClientIp } from "@/lib/auth/session";
+import { requireMasterOrApiKey } from "@/lib/auth/api-key";
+import { getClientIp } from "@/lib/auth/session";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
@@ -10,7 +11,7 @@ import { z } from "zod";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireMaster();
+    await requireMasterOrApiKey(request, "shares");
     const { searchParams } = request.nextUrl;
     const status = searchParams.get("status") ?? "all"; // all | active | expired
     const ownerId = searchParams.get("ownerId");
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     if (!(await validateCsrf(request))) return apiError("Invalid CSRF token", 403);
-    const master = await requireMaster();
+    const master = await requireMasterOrApiKey(request, "shares");
     const ip = getClientIp(request);
     const body = z
       .object({
