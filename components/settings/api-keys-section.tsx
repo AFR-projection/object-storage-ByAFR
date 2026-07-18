@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
 import { cn, formatDate } from "@/lib/utils";
+import { McpSetupSection } from "@/components/settings/mcp-setup-section";
 
 type ApiKeyRow = {
   id: string;
@@ -223,10 +224,11 @@ export function ApiKeysSection() {
       {tab === "create" && (
         <div className="space-y-4">
           <div className="rounded-lg border border-border/60 bg-surface-hover/30 p-3 text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">Plug & play for AI agents</p>
+            <p className="font-medium text-foreground">Plug & play — platform apapun</p>
             <p className="mt-1">
-              Create a key, copy the config block, paste it into ChatGPT / Claude / Cursor — done.
-              Auth uses standard <code className="text-accent">Authorization: Bearer sk_…</code>.
+              Buat key → copy config → paste ke client kamu (MCP / HTTP / OpenAPI). Auth standar{" "}
+              <code className="text-accent">Authorization: Bearer sk_…</code> — semua platform yang support Bearer
+              bisa connect.
             </p>
           </div>
 
@@ -452,6 +454,12 @@ export function ApiKeysSection() {
               Copy curl
             </Button>
           </div>
+
+          <McpSetupSection
+            apiUrl={baseUrl}
+            keyPlaceholder={createdRaw ?? "YOUR_SK_KEY"}
+            variant="user"
+          />
 
           <div className="rounded-lg border border-border/40 p-3 text-xs text-muted-foreground">
             <p className="flex items-center gap-1.5 font-medium text-foreground">

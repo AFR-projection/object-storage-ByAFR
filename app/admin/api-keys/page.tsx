@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
 import { cn, formatDate } from "@/lib/utils";
+import { McpSetupSection } from "@/components/settings/mcp-setup-section";
 
 function buildMasterAiPrompt(baseUrl: string, apiKey: string): string {
   return [
@@ -398,6 +399,12 @@ export default function AdminApiKeysPage() {
               {data?.docs?.quickStart?.stats?.replace("skm_YOUR_KEY", "skm_…")}
             </code>
           </div>
+
+          <McpSetupSection
+            apiUrl={baseUrl}
+            keyPlaceholder={createdRaw ?? "YOUR_SKM_KEY"}
+            variant="master"
+          />
         </Card>
       )}
 

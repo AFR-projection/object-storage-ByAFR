@@ -78,6 +78,15 @@ async function main() {
   const docs = await api("/api/v1/docs", key.rawKey);
   assert("GET /api/v1/docs", docs.status === 200 && docs.json.success, docs.json.error);
 
+  const connect = await api("/api/v1/connect", key.rawKey);
+  assert(
+    "GET /api/v1/connect",
+    connect.status === 200 &&
+      connect.json.success &&
+      connect.json.data?.mcp?.remoteUrl?.includes("/api/mcp"),
+    connect.json.error
+  );
+
   const files = await api("/api/files?limit=1", key.rawKey);
   assert("GET /api/files", files.status === 200 && files.json.success, files.json.error);
 

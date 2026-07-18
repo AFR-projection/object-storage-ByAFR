@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "storage-by-afr": {
+      "command": "npm",
+      "args": ["run", "mcp"],
+      "cwd": "C:/path/to/StrogeByAFR",
+      "env": {
+        "STORAGE_API_URL": "https://storage.dataku.id",
+        "STORAGE_API_KEY": "YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
