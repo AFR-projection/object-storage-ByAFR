@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:api-keys": "tsx scripts/test-api-key-flow.ts",
+    "test:oauth-mcp": "tsx scripts/test-oauth-mcp-flow.ts",
     "mcp": "tsx mcp-server/index.ts",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",

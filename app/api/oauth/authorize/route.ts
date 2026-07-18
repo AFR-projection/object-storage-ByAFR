@@ -1,0 +1,57 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth/session";
+import { validateOAuthClientRedirect } from "@/lib/oauth/clients";
+import { parseScopes } from "@/lib/oauth/constants";
+import { oauthError } from "@/lib/oauth/http";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(request: NextRequest) {
+  const params = request.nextUrl.searchParams;
+  const responseType = params.get("response_type");
+  const clientId = params.get("client_id");
+  const redirectUri = params.get("redirect_uri");
+  const scope = params.get("scope");
+  const state = params.get("state");
+  const codeChallenge = params.get("code_challenge");
+  const codeChallengeMethod = params.get("code_challenge_method") ?? "S256";
+
+  if (responseType !== "code") {
+    return oauthError("unsupported_response_type", "Only response_type=code is supported");
+  }
+  if (!clientId || !redirectUri || !codeChallenge) {
+    return oauthError("invalid_request", "client_id, redirect_uri, and code_challenge are required");
+  }
+  if (codeChallengeMethod !== "S256") {
+    return oauthError("invalid_request", "Only S256 PKCE is supported");
+  }
+
+  const clientCheck = await validateOAuthClientRedirect(clientId, redirectUri);
+  if (!clientCheck.ok) {
+    return oauthError(clientCheck.error, undefined, 400);
+  }
+
+  parseScopes(scope);
+
+  const session = await getSessionUser();
+  const consentParams = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: scope ?? "read",
+    state: state ?? "",
+    code_challenge: codeChallenge,
+    code_challenge_method: codeChallengeMethod,
+  });
+
+  if (!session) {
+    const loginNext = `/oauth/consent?${consentParams.toString()}`;
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", loginNext);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  const consentUrl = new URL("/oauth/consent", request.url);
+  consentParams.forEach((v, k) => consentUrl.searchParams.set(k, v));
+  return NextResponse.redirect(consentUrl);
+}

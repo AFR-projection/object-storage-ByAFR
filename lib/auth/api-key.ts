@@ -5,6 +5,8 @@ import { apiKeys, users, type User } from "@/lib/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { AuthError, getSessionUser, requireMaster, type SessionUser } from "@/lib/auth/session";
 import { checkRateLimit, peekRateLimit } from "@/lib/security";
+import { OAUTH_ACCESS_PREFIX } from "@/lib/oauth/constants";
+import { authenticateOAuthAccessToken } from "@/lib/oauth/tokens";
 
 export type ApiKeyScope = "read" | "upload" | "download" | "delete" | "write" | "full";
 
@@ -226,6 +228,16 @@ export function isBearerApiKeyRequest(request: Request): boolean {
   if (!auth?.startsWith("Bearer ")) return false;
   const token = auth.slice(7).trim();
   return token.startsWith(USER_KEY_PREFIX) || token.startsWith(MASTER_KEY_PREFIX);
+}
+
+export function isOAuthBearerRequest(request: Request): boolean {
+  const token = extractBearerToken(request);
+  return !!token?.startsWith(OAUTH_ACCESS_PREFIX);
+}
+
+/** API key or OAuth access token — bypasses session cookie in proxy */
+export function isProgrammaticBearerRequest(request: Request): boolean {
+  return isBearerApiKeyRequest(request) || isOAuthBearerRequest(request);
 }
 
 export function extractBearerToken(request: Request): string | null {
@@ -506,6 +518,14 @@ export async function requireAuthOrApiKey(
     const token = extractBearerToken(request);
     if (!token) throw new AuthError("Unauthorized");
     return authenticateApiKey(token, requiredScopes);
+  }
+
+  if (isOAuthBearerRequest(request)) {
+    const token = extractBearerToken(request);
+    if (!token) throw new AuthError("Unauthorized");
+    const user = await authenticateOAuthAccessToken(token, requiredScopes);
+    if (!user) throw new AuthError("Unauthorized");
+    return user;
   }
 
   const user = await getSessionUser();

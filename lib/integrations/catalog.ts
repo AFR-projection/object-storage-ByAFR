@@ -36,12 +36,11 @@ export const CONNECTION_METHODS: ConnectionMethod[] = [
     name: "MCP",
     subtitle: "Model Context Protocol",
     description:
-      "Protokol MCP resmi — local stdio (npm run mcp) atau remote Streamable HTTP (/api/mcp). Semua client MCP yang support transport tersebut bisa connect dengan API key sendiri.",
+      "Local stdio (npm run mcp + API key) atau remote HTTP (/api/mcp + OAuth 2.1). Semua MCP client yang support transport + auth tersebut.",
     compatibility: [
-      "MCP client dengan stdio transport (local)",
-      "MCP client dengan Streamable HTTP (remote)",
-      "Bearer API key (sk_* / skm_*)",
-      "Semua AI agent / IDE yang support MCP",
+      "MCP stdio + API key (local)",
+      "MCP Streamable HTTP + OAuth 2.1 PKCE (remote connector)",
+      "Discovery: /.well-known/oauth-authorization-server",
     ],
     tier: "both",
   },

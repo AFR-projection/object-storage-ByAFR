@@ -123,20 +123,20 @@ export function buildConnectManifest(fallbackOrigin?: string): ConnectManifest {
       {
         id: "mcp-remote",
         name: "MCP (remote HTTP)",
-        description: "Model Context Protocol Streamable HTTP — stateful sessions at /api/mcp.",
+        description: "Model Context Protocol Streamable HTTP — OAuth 2.1 + PKCE for MCP connectors (ChatGPT, etc.).",
         url: `${baseUrl}/api/mcp`,
         compatibility: {
           requires: [
             "MCP client with Streamable HTTP transport",
-            "Authorization: Bearer header on every request",
-            "Mcp-Session-Id header after initialize",
+            "OAuth 2.1 Authorization Code + PKCE (S256)",
+            "Dynamic Client Registration (RFC 7591)",
           ],
           transport: "streamable-http",
-          auth: "Bearer sk_* or skm_* (API key — not OAuth, not session cookie)",
+          auth: "OAuth 2.1 (browser login) — discovery via /.well-known/oauth-authorization-server",
           setup: [
-            "Server URL: /api/mcp",
-            "Auth type: API Key / Bearer token",
-            "Verify with storage_verify tool",
+            "MCP Server URL: /api/mcp (NOT /api/v1/connect or /api/v1/openapi)",
+            "Client auto-discovers OAuth — user signs in at storage.dataku.id",
+            "After consent, MCP tools run with granted scopes",
           ],
         },
       },

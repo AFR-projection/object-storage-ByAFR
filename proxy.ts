@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { hstsEnabled } from "@/lib/env/runtime";
-import { isBearerApiKeyRequest } from "@/lib/auth/api-key";
+import { isProgrammaticBearerRequest } from "@/lib/auth/api-key";
 
 const publicPaths = [
   "/",
@@ -19,7 +19,16 @@ const publicPaths = [
   "/api/auth/csrf",
   "/api/auth/maintenance",
   "/api/shared",
+  "/oauth/consent",
 ];
+
+const PUBLIC_API_PREFIXES = [
+  "/api/oauth/",
+  "/.well-known/",
+];
+
+/** Route handlers perform their own auth (e.g. MCP OAuth WWW-Authenticate) */
+const HANDLER_AUTH_API_PREFIXES = ["/api/mcp"];
 
 /** Obvious automated scrapers — never block browsers or health checks on pages. */
 const BOT_PATTERNS = [
@@ -38,7 +47,12 @@ const SENSITIVE_API_PREFIXES = [
 ];
 
 function isPublicPath(pathname: string): boolean {
-  return publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  if (publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return true;
+  return PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(p));
+}
+
+function skipsProxyAuth(pathname: string): boolean {
+  return HANDLER_AUTH_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 function isBot(userAgent: string | null): boolean {
@@ -61,7 +75,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const sessionCookie = request.cookies.get("storage_session");
-  const hasApiKey = isBearerApiKeyRequest(request);
+  const hasApiKey = isProgrammaticBearerRequest(request);
   const ua = request.headers.get("user-agent");
 
   // Bot protection: sensitive API routes only (not pages, login, or CSRF)
@@ -79,8 +93,8 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Bearer sk_* API keys authenticate at the route layer — no session cookie required.
-  if (!sessionCookie && pathname.startsWith("/api/") && !hasApiKey) {
+  // Bearer sk_* / oat_* authenticate at the route layer — no session cookie required.
+  if (!sessionCookie && pathname.startsWith("/api/") && !hasApiKey && !skipsProxyAuth(pathname)) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 

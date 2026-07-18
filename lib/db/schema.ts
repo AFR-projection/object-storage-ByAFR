@@ -405,6 +405,70 @@ export const waPairings = pgTable(
   ]
 );
 
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: text("client_id").notNull(),
+    clientSecretHash: text("client_secret_hash"),
+    clientName: text("client_name"),
+    redirectUris: jsonb("redirect_uris").$type<string[]>().notNull().default([]),
+    grantTypes: jsonb("grant_types").$type<string[]>().notNull().default(["authorization_code", "refresh_token"]),
+    responseTypes: jsonb("response_types").$type<string[]>().notNull().default(["code"]),
+    tokenEndpointAuthMethod: text("token_endpoint_auth_method").notNull().default("none"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("oauth_clients_client_id_unique").on(table.clientId)]
+);
+
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    codeHash: text("code_hash").notNull(),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    scope: text("scope").notNull().default("read"),
+    codeChallenge: text("code_challenge").notNull(),
+    codeChallengeMethod: text("code_challenge_method").notNull().default("S256"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("oauth_authorization_codes_hash_unique").on(table.codeHash),
+    index("oauth_authorization_codes_client_idx").on(table.clientId),
+    index("oauth_authorization_codes_expires_idx").on(table.expiresAt),
+  ]
+);
+
+export const oauthAccessTokens = pgTable(
+  "oauth_access_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: text("token_hash").notNull(),
+    refreshTokenHash: text("refresh_token_hash"),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull().default("read"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("oauth_access_tokens_hash_unique").on(table.tokenHash),
+    uniqueIndex("oauth_access_tokens_refresh_hash_unique").on(table.refreshTokenHash),
+    index("oauth_access_tokens_user_idx").on(table.userId),
+    index("oauth_access_tokens_client_idx").on(table.clientId),
+  ]
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   folders: many(folders),

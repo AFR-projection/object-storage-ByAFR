@@ -32,30 +32,28 @@ export function getRemoteMcpUrl(apiUrl: string): string {
   return `${apiUrl.replace(/\/$/, "")}/api/mcp`;
 }
 
-export function generateRemoteMcpInstructions(options: {
-  apiUrl: string;
-  keyPlaceholder?: string;
-}): string {
+export function generateRemoteMcpInstructions(options: { apiUrl: string }): string {
   const mcpUrl = getRemoteMcpUrl(options.apiUrl);
-  const key = options.keyPlaceholder ?? "YOUR_API_KEY_HERE";
+  const base = options.apiUrl.replace(/\/$/, "");
 
   return [
-    "Remote MCP — Streamable HTTP",
+    "Remote MCP Connector (OAuth 2.1)",
     "",
-    `Server URL: ${mcpUrl}`,
-    "Transport: MCP Streamable HTTP",
-    "Authentication: Bearer API Key",
-    `Authorization: Bearer ${key}`,
+    `✅ MCP Server URL: ${mcpUrl}`,
     "",
-    "Compatible with: any MCP client that supports remote HTTP + Bearer auth.",
+    "❌ JANGAN pakai URL ini untuk MCP connector:",
+    `   ${base}/api/v1/connect  (manifest — bukan MCP server)`,
+    `   ${base}/api/v1/openapi  (OpenAPI spec — untuk Custom GPT Actions, bukan MCP)`,
     "",
-    "Setup:",
-    "1. Open your MCP client's connector / server settings",
-    "2. Paste Server URL above",
-    "3. Choose API Key / Bearer auth — paste your sk_ or skm_ key",
-    "4. Test with storage_verify tool",
+    "Setup MCP connector (semua client yang support MCP + OAuth):",
+    "1. Paste MCP Server URL di atas",
+    "2. Client auto-fetch OAuth dari /.well-known/oauth-authorization-server",
+    "3. Login browser ke akun Storage ByAFR → Allow access",
+    "4. Test tool storage_verify",
     "",
-    "Security: never paste your real key in AI chat — only in the connector form.",
+    "OAuth discovery:",
+    `${base}/.well-known/oauth-authorization-server`,
+    `${base}/.well-known/oauth-protected-resource/api/mcp`,
   ].join("\n");
 }
 
@@ -70,10 +68,10 @@ export const MCP_LOCAL_SETUP_STEPS = [
 ] as const;
 
 export const MCP_REMOTE_SETUP_STEPS = [
-  "Buat API key — simpan aman, jangan paste di chat AI",
-  "Buka MCP client kamu → tambah remote MCP server / connector",
-  "Server URL: https://…/api/mcp (copy di bawah)",
-  "Auth: Bearer / API Key → paste sk_ atau skm_ kamu",
+  "Buka MCP connector di client kamu (Developer Mode / Connectors)",
+  "Server URL: https://…/api/mcp — bukan /connect atau /openapi",
+  "OAuth auto-detect — login browser ke akun Storage ByAFR",
+  "Klik Allow access di halaman consent",
   "Test dengan tool storage_verify",
 ] as const;
 

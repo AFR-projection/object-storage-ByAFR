@@ -46,12 +46,8 @@ export function McpSetupSection({
 
   const remoteUrl = getRemoteMcpUrl(apiUrl);
   const remoteInstructions = useMemo(
-    () =>
-      generateRemoteMcpInstructions({
-        apiUrl,
-        keyPlaceholder: keyPlaceholder,
-      }),
-    [apiUrl, keyPlaceholder]
+    () => generateRemoteMcpInstructions({ apiUrl }),
+    [apiUrl]
   );
 
   return (
@@ -114,8 +110,13 @@ export function McpSetupSection({
         <>
           <p className="text-xs text-muted-foreground flex items-start gap-1.5">
             <Globe className="h-3.5 w-3.5 shrink-0 mt-0.5 text-violet-400" />
-            Streamable HTTP di /api/mcp — untuk semua MCP client yang support remote HTTP + Bearer API key.
+            Streamable HTTP + OAuth 2.1 — untuk semua MCP connector yang wajib OAuth (bukan API key manual).
           </p>
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-200/90">
+            URL yang benar: <code className="break-all">{remoteUrl}</code>
+            <br />
+            Bukan /api/v1/connect atau /api/v1/openapi
+          </div>
           <ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground">
             {MCP_REMOTE_SETUP_STEPS.map((step) => (
               <li key={step}>{step}</li>

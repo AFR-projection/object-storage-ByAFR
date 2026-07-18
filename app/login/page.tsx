@@ -90,7 +90,9 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      const next = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
+      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+      router.push(safeNext);
       router.refresh();
     } catch {
       setError("Connection failed");

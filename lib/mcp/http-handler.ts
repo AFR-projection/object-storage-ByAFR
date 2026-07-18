@@ -7,6 +7,9 @@ import {
 import { AuthError } from "@/lib/auth/session";
 import { appPublicUrl } from "@/lib/env/runtime";
 import { peekRateLimit, checkRateLimit } from "@/lib/security";
+import { authenticateOAuthAccessToken } from "@/lib/oauth/tokens";
+import { OAUTH_ACCESS_PREFIX } from "@/lib/oauth/constants";
+import { buildWwwAuthenticateHeader } from "@/lib/oauth/metadata";
 import {
   createMcpSessionPair,
   getMcpSession,
@@ -30,20 +33,50 @@ function corsHeaders(origin: string | null): HeadersInit {
   return headers;
 }
 
-async function authenticateMcpRequest(request: Request): Promise<SessionUserFromApiKey> {
-  if (!isBearerApiKeyRequest(request)) {
-    throw new Response(JSON.stringify({ success: false, error: "Bearer API key required" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+function unauthorizedResponse(origin: string | null, fallbackOrigin: string, message: string): Response {
+  return new Response(JSON.stringify({ success: false, error: message }), {
+    status: 401,
+    headers: {
+      ...corsHeaders(origin),
+      "Content-Type": "application/json",
+      "WWW-Authenticate": buildWwwAuthenticateHeader(appPublicUrl() || fallbackOrigin),
+    },
+  });
+}
 
+async function authenticateMcpRequest(
+  request: Request,
+  fallbackOrigin: string
+): Promise<SessionUserFromApiKey> {
   const token = extractBearerToken(request);
   if (!token) {
-    throw new Response(JSON.stringify({ success: false, error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    throw unauthorizedResponse(request.headers.get("origin"), fallbackOrigin, "Authorization required");
+  }
+
+  if (token.startsWith(OAUTH_ACCESS_PREFIX)) {
+    const rlKey = `mcp:oauth:${token.slice(0, 16)}`;
+    const peek = await peekRateLimit(rlKey, MCP_RATE_MAX, MCP_RATE_WINDOW_MS);
+    if (!peek.allowed) {
+      throw new Response(JSON.stringify({ success: false, error: "Rate limit exceeded" }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    void checkRateLimit(rlKey, MCP_RATE_MAX, MCP_RATE_WINDOW_MS);
+
+    const user = await authenticateOAuthAccessToken(token, ["read"]);
+    if (!user) {
+      throw unauthorizedResponse(request.headers.get("origin"), fallbackOrigin, "Invalid OAuth token");
+    }
+    return user;
+  }
+
+  if (!isBearerApiKeyRequest(request)) {
+    throw unauthorizedResponse(
+      request.headers.get("origin"),
+      fallbackOrigin,
+      "Bearer API key (sk_/skm_) or OAuth token (oat_) required"
+    );
   }
 
   const prefix = token.startsWith("skm_") ? token.slice(0, 13) : token.slice(0, 12);
@@ -61,10 +94,7 @@ async function authenticateMcpRequest(request: Request): Promise<SessionUserFrom
     return await authenticateApiKey(token, ["read"]);
   } catch (e) {
     if (e instanceof AuthError) {
-      throw new Response(JSON.stringify({ success: false, error: e.message }), {
-        status: e.status,
-        headers: { "Content-Type": "application/json" },
-      });
+      throw unauthorizedResponse(request.headers.get("origin"), fallbackOrigin, e.message);
     }
     throw e;
   }
@@ -72,6 +102,7 @@ async function authenticateMcpRequest(request: Request): Promise<SessionUserFrom
 
 export async function handleMcpHttpRequest(request: Request): Promise<Response> {
   const origin = request.headers.get("origin");
+  const fallbackOrigin = new URL(request.url).origin;
 
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -86,20 +117,21 @@ export async function handleMcpHttpRequest(request: Request): Promise<Response> 
 
   let user: SessionUserFromApiKey;
   try {
-    user = await authenticateMcpRequest(request);
+    user = await authenticateMcpRequest(request, fallbackOrigin);
   } catch (response) {
     if (response instanceof Response) return response;
     throw response;
   }
 
   const token = extractBearerToken(request)!;
-  const baseUrl = appPublicUrl() || new URL(request.url).origin;
+  const baseUrl = appPublicUrl() || fallbackOrigin;
   const sessionId = request.headers.get("mcp-session-id");
 
   let transport;
   if (sessionId) {
     const existing = getMcpSession(sessionId);
-    if (!existing || existing.apiKeyId !== user.apiKeyId) {
+    const ownerKey = user.apiKeyId;
+    if (!existing || existing.apiKeyId !== ownerKey) {
       return new Response(JSON.stringify({ error: "Invalid or expired MCP session" }), {
         status: 404,
         headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
