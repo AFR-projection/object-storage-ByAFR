@@ -455,7 +455,7 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-6">
       <div className="h-10 w-56 skeleton rounded-lg" />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[...Array(4)].map((_, i) => (
           <div key={i} className="h-32 skeleton rounded-2xl" />
         ))}
@@ -529,7 +529,7 @@ export default function DashboardPage() {
       </motion.div>
 
       {/* Stat Cards */}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 mb-8">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4 mb-8">
         <StatCard
           label="Total Files"
           value={stats.totalFiles}

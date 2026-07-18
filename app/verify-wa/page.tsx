@@ -121,7 +121,7 @@ function VerifyWAContent() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -246,7 +246,7 @@ function VerifyWAContent() {
 
 export default function VerifyWAPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+    <Suspense fallback={<div className="flex min-h-dvh items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
       <VerifyWAContent />
     </Suspense>
   );

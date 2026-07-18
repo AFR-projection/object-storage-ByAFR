@@ -171,12 +171,12 @@ export default function SharesPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.04 }}
                 className={cn(
-                  "group flex items-center justify-between rounded-2xl border border-border/50 bg-surface p-5 transition-all hover:shadow-md",
+                  "group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-border/50 bg-surface p-4 sm:p-5 transition-all hover:shadow-md",
                   historyShare === share.id ? "border-accent/30 shadow-md" : "hover:border-accent/20"
                 )}
               >
-                <div className="flex items-center gap-4 flex-1 min-w-0">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent/10">
+                <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-accent/10">
                     <Link className="h-5 w-5 text-accent" />
                   </div>
                   <div className="min-w-0">
@@ -204,11 +204,11 @@ export default function SharesPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0 ml-4">
+                <div className="flex items-center gap-1 shrink-0 sm:ml-4 max-sm:border-t max-sm:border-border/40 max-sm:pt-3 max-sm:justify-end">
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-10 min-h-[44px] sm:h-9 gap-1.5"
+                    className="h-10 min-h-[44px] sm:h-9 gap-1.5 max-sm:flex-1"
                     onClick={() => copyLink(share.token)}
                   >
                     {copiedId === share.token ? (

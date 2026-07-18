@@ -332,7 +332,7 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
           )}
 
           {showShare && (
-            <ShareDialog fileId={file.id} fileName={file.name} fileType={file.mimeType} onClose={() => setShowShare(false)} />
+            <ShareDialog fileId={file.id} fileName={file.name} fileType={file.mimeType} isNote={file.isNote} onClose={() => setShowShare(false)} />
           )}
         </motion.div>
       </motion.div>

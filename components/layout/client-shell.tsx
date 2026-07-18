@@ -1,6 +1,7 @@
 "use client";
 
 import { Sidebar } from "./sidebar";
+import { BottomNav } from "./bottom-nav";
 import { useSyncExternalStore, useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { Menu, Search } from "lucide-react";
@@ -116,7 +117,7 @@ export function ClientShell({
   const title = getPageTitle(pathname);
 
   return (
-    <div className="min-h-screen bg-background" suppressHydrationWarning>
+    <div className="min-h-dvh bg-background" suppressHydrationWarning>
       <Sidebar
         user={user}
         collapsed={collapsed}
@@ -126,7 +127,7 @@ export function ClientShell({
       />
 
       {/* Mobile/Tablet Header */}
-      <header className="fixed top-0 left-0 right-0 z-30 flex h-14 items-center gap-2 border-b border-border/50 bg-card/90 backdrop-blur-xl px-3 shadow-sm lg:hidden">
+      <header className="fixed top-0 left-0 right-0 z-30 flex h-14 items-center gap-2 border-b border-border/50 bg-card/90 backdrop-blur-xl px-3 shadow-sm pt-safe lg:hidden" style={{ height: "calc(3.5rem + var(--safe-top))" }}>
         <Button
           variant="ghost"
           size="icon"
@@ -146,17 +147,24 @@ export function ClientShell({
         </Link>
       </header>
 
-      {/* Main content — padding handled purely by CSS to avoid layout shift */}
+      {/* Main content — padding handled purely by CSS to avoid layout shift.
+          Mobile: offset for the fixed header (incl. notch) and leave room for
+          the bottom tab bar so the last row is never hidden behind it. */}
       <main
         className={cn(
-          "min-h-screen max-lg:!pl-0 max-lg:pt-14",
+          "min-h-dvh max-lg:!pl-0 max-lg:pb-nav-safe",
           sidebarTransition && "transition-all duration-250 ease-out",
           collapsed ? "lg:pl-[72px]" : "lg:pl-[240px]"
         )}
+        style={{ scrollPaddingTop: "calc(3.5rem + var(--safe-top))" }}
         suppressHydrationWarning
       >
-        {children}
+        <div className="max-lg:pt-[calc(3.5rem+var(--safe-top))]">{children}</div>
       </main>
+
+      {/* Native-style bottom tab bar (mobile/tablet only). Its Menu button
+          opens the same sidebar drawer used by the header hamburger. */}
+      <BottomNav onOpenMenu={() => setMobileSidebarOpen(true)} />
     </div>
   );
 }

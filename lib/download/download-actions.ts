@@ -35,19 +35,27 @@ export type DownloadableFile = {
   id: string;
   name: string;
   mimeType: string;
+  sizeBytes?: number | null;
   encrypted?: boolean | null;
   encryptionMeta?: unknown;
 };
 
 /**
- * Central entry point for downloading a file. For a normal file this behaves
- * exactly like {@link downloadFile}. For an END-TO-END ENCRYPTED file, a plain
- * download would only yield ciphertext under the real filename — so instead we
- * hand it off to the global passphrase dialog, which decrypts in the browser
- * and saves the real file. The passphrase never touches the server.
+ * Files at or above this size download through the progress proxy so the user
+ * gets a live progress bar + speed + resume. Smaller files go straight to R2
+ * (instant, zero server bandwidth) since a progress bar would just flash.
+ */
+const PROGRESS_THRESHOLD_BYTES = 25 * 1024 * 1024; // 25 MB
+
+/**
+ * Central, "smart" entry point for downloading a file — one action, right
+ * behaviour for each case:
+ *   - Encrypted (E2E): hand off to the passphrase dialog, which decrypts in the
+ *     browser and saves the real file (passphrase never touches the server).
+ *   - Large plain file: stream via the progress proxy (live progress + resume).
+ *   - Small plain file: redirect straight to R2 (instant, no server bandwidth).
  *
- * Prefer this over calling downloadFile directly wherever the full file record
- * is available.
+ * Prefer this over calling downloadFile/downloadFileWithProgress directly.
  */
 export function requestDownload(file: DownloadableFile) {
   if (file.encrypted) {
@@ -66,6 +74,12 @@ export function requestDownload(file: DownloadableFile) {
     });
     return;
   }
+
+  if ((file.sizeBytes ?? 0) >= PROGRESS_THRESHOLD_BYTES) {
+    void downloadFileWithProgress(file.id, file.name);
+    return;
+  }
+
   downloadFile(file.id, file.name);
 }
 

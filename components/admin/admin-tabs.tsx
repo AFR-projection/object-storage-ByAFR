@@ -21,8 +21,8 @@ export function AdminTabs({ children }: { children: React.ReactNode }) {
 
   return (
     <div>
-      {/* Tabs */}
-      <div className="relative mb-8 flex flex-wrap gap-1 rounded-2xl bg-muted/40 p-1.5 border border-border/40">
+      {/* Tabs — horizontal scroll on mobile so they stay one clean row. */}
+      <div className="relative mb-6 sm:mb-8 flex gap-1 overflow-x-auto no-scrollbar rounded-2xl bg-muted/40 p-1.5 border border-border/40 max-sm:flex-nowrap sm:flex-wrap">
         {tabs.map((tab) => {
           const active = tab.href === "/admin"
             ? pathname === "/admin"
@@ -32,7 +32,7 @@ export function AdminTabs({ children }: { children: React.ReactNode }) {
               key={tab.href}
               href={tab.href}
               className={cn(
-                "relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors z-10",
+                "relative flex shrink-0 items-center gap-2 rounded-xl px-3.5 sm:px-4 py-2.5 text-sm font-medium transition-colors z-10",
                 active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >

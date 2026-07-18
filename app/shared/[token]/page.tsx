@@ -12,12 +12,15 @@ const VideoViewer = dynamic(() => import("@/components/media-viewers/video-viewe
 const AudioViewer = dynamic(() => import("@/components/media-viewers/audio-viewer").then((m) => m.AudioViewer), { ssr: false });
 const TextViewer = dynamic(() => import("@/components/media-viewers/text-viewer").then((m) => m.TextViewer), { ssr: false });
 const SvgViewer = dynamic(() => import("@/components/media-viewers/svg-viewer").then((m) => m.SvgViewer), { ssr: false });
+const SharedNoteView = dynamic(() => import("@/components/editors/shared-note-view").then((m) => m.SharedNoteView), { ssr: false });
 
 export default function PublicSharedPage() {
   const params = useParams();
   const token = params.token as string;
   const [data, setData] = useState<{
     file: { id: string; name: string; mimeType: string; sizeBytes: number; isNote?: boolean };
+    note?: { content: unknown } | null;
+    permission?: string;
     accessCount?: number;
     maxAccessCount?: number;
     lastAccessedAt?: string;
@@ -37,7 +40,7 @@ export default function PublicSharedPage() {
 
   if (!data) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-dvh items-center justify-center">
         <div className="text-center">
           {error ? (
             <>
@@ -57,13 +60,54 @@ export default function PublicSharedPage() {
   const isSvg = data.file.mimeType === "image/svg+xml" || ext === "svg";
   const isText = data.file.mimeType.startsWith("text/") || data.file.mimeType === "application/json" || data.file.mimeType === "application/xml";
 
+  const isNote = !!data.file.isNote;
+  const canEdit = data.permission === "edit";
+
   const canPreview = category === "pdf" || category === "image" || category === "video" || category === "audio" || isSvg || isText;
 
   // Gunakan streaming endpoint publik — view only, no download
   const previewUrl = `/api/shared/${token}/preview`;
 
+  const noteTitle = data.file.name.replace(/\.note$/, "");
+
+  // Notes have no R2 object — render their Tiptap body directly instead of
+  // streaming a file that doesn't exist.
+  if (isNote) {
+    return (
+      <div className="min-h-dvh bg-background">
+        <div className="flex flex-col min-h-dvh">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border/40 px-4 py-3 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <Cloud className="h-5 w-5 text-accent shrink-0" />
+              <h1 className="truncate text-sm font-semibold">{noteTitle}</h1>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              {data.maxAccessCount && (
+                <div className="flex items-center gap-1">
+                  <Eye className="h-3 w-3" />
+                  <span>{data.accessCount} / {data.maxAccessCount}</span>
+                </div>
+              )}
+              {data.expiresAt && (
+                <div className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>{new Date(data.expiresAt).toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            <SharedNoteView token={token} content={data.note?.content ?? null} canEdit={canEdit} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       {canPreview ? (
         <div className="h-screen flex flex-col">
           {/* Header */}
@@ -102,7 +146,7 @@ export default function PublicSharedPage() {
           </div>
         </div>
       ) : (
-        <div className="flex min-h-screen items-center justify-center p-4">
+        <div className="flex min-h-dvh items-center justify-center p-4">
           <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-8 text-center shadow-medium">
             <Cloud className="mx-auto h-12 w-12 text-accent mb-4" />
             <h1 className="text-xl font-bold truncate">{data.file.name}</h1>

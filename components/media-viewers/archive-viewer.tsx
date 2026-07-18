@@ -339,7 +339,7 @@ export function ArchiveViewer({ fileName, mimeType, sizeBytes, fileId }: Archive
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search files..."
-          className="w-full pl-7 pr-7 py-1.5 text-xs bg-muted/20 border border-border/30 rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:border-accent/50"
+          className="w-full pl-7 pr-7 py-1.5 text-base sm:text-xs bg-muted/20 border border-border/30 rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:border-accent/50"
         />
         {searchQuery && (
           <button onClick={() => setSearchQuery("")} className="absolute right-5 top-1/2 -translate-y-1/2">

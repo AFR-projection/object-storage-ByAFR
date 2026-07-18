@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import { QUICK_ACTION_EVENT, type QuickAction } from "@/lib/system/quick-actions";
 import { useDropzone } from "react-dropzone";
 import {
   Upload, FolderPlus, FilePlus, Grid3X3, List, Search, Loader2, Trash2, AlertCircle, FolderUp,
@@ -18,13 +19,14 @@ import dynamic from "next/dynamic";
 import { DndContext, DragEndEvent } from "@dnd-kit/core";
 import { FolderCard } from "@/components/folders/folder-card";
 import { UploadQueue, traverseDirectory } from "@/lib/upload-queue";
-import { requestDownload, downloadZip, downloadFileWithProgress } from "@/lib/download/download-actions";
+import { requestDownload, downloadZip } from "@/lib/download/download-actions";
 import { EncryptionSetupDialog } from "./encryption-setup-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 
 const NoteEditor = dynamic(() => import("@/components/editors/note-editor").then((m) => m.NoteEditor), { ssr: false });
 const FilePreview = dynamic(() => import("@/components/files/file-preview").then((m) => m.FilePreview), { ssr: false });
 const UploadPanel = dynamic(() => import("@/components/files/upload-panel").then((m) => m.UploadPanel), { ssr: false });
+const ShareDialog = dynamic(() => import("@/components/files/share-dialog").then((m) => m.ShareDialog), { ssr: false });
 const FolderInviteDialog = dynamic(
   () => import("@/components/folders/folder-invite-dialog").then((m) => m.FolderInviteDialog),
   { ssr: false }
@@ -89,10 +91,12 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<UploadQueue | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const [encryptUploads, setEncryptUploads] = useState(false);
   const [encryptPassphrase, setEncryptPassphrase] = useState("");
   const [encryptDialogOpen, setEncryptDialogOpen] = useState(false);
   const [inviteFolder, setInviteFolder] = useState<FolderRecord | null>(null);
+  const [shareFile, setShareFile] = useState<FileRecord | null>(null);
 
   // Infinite scroll — extra pages loaded via "Load more"
   const [loadedMore, setLoadedMore] = useState<FileRecord[]>([]);
@@ -309,17 +313,19 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   const handleFileAction = useCallback(async (action: string, file: FileRecord) => {
     try {
       if (action === "download") {
+        // Notes have no stored file — export happens from the editor
+        // (Markdown / TXT / PDF). Open it instead of hitting the download API.
+        if (file.isNote) {
+          setSelectedFile(file);
+          setShowNoteEditor(true);
+          return;
+        }
         requestDownload(file);
         return;
       }
-      if (action === "download-progress") {
-        // Encrypted files must be decrypted client-side; progress-proxy would
-        // only stream ciphertext. Route them through the passphrase dialog.
-        if (file.encrypted) {
-          requestDownload(file);
-        } else {
-          downloadFileWithProgress(file.id, file.name);
-        }
+      if (action === "share") {
+        // Open the share dialog — "share" is not a PATCH mutation.
+        setShareFile(file);
         return;
       }
       if (trash) {
@@ -654,6 +660,22 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     else { setSelectedFile(file); }
   }, []);
 
+  // Mobile bottom-nav "+" delegates here so we never duplicate upload/note/
+  // folder logic. Disabled in trash/favorites where creation isn't allowed.
+  useEffect(() => {
+    if (trash || favorites) return;
+    const handler = (e: Event) => {
+      const action = (e as CustomEvent<QuickAction>).detail;
+      if (action === "upload") uploadInputRef.current?.click();
+      else if (action === "note") void createNote();
+      else if (action === "folder") void createFolder();
+    };
+    window.addEventListener(QUICK_ACTION_EVENT, handler);
+    return () => window.removeEventListener(QUICK_ACTION_EVENT, handler);
+    // createNote/createFolder are stable closures over folderId; re-bind on it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trash, favorites, folderId]);
+
   const isLoading = filesQuery.isPending && !filesQuery.data;
 
   useEffect(() => {
@@ -762,6 +784,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
                 </span>
               </Button>
               <input
+                ref={uploadInputRef}
                 type="file"
                 multiple
                 className="hidden"
@@ -806,13 +829,13 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
 
       {/* ── Filter chips ── */}
       {!trash && !favorites && !search && (
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <div className="mb-4 flex items-center gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 sm:flex-wrap sm:overflow-visible sm:mx-0 sm:px-0">
           {FILTERS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => { setTypeFilter(key); setSelectedIds(new Set()); }}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all border",
+                "tap inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all border",
                 typeFilter === key
                   ? "bg-accent text-white border-accent shadow-sm"
                   : "bg-surface text-muted-foreground/70 border-border/50 hover:border-accent/30 hover:text-foreground"
@@ -926,6 +949,16 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
           folderId={inviteFolder.id}
           folderName={inviteFolder.name}
           onClose={() => setInviteFolder(null)}
+        />
+      )}
+
+      {shareFile && (
+        <ShareDialog
+          fileId={shareFile.id}
+          fileName={shareFile.name}
+          fileType={shareFile.mimeType}
+          isNote={shareFile.isNote}
+          onClose={() => setShareFile(null)}
         />
       )}
 

@@ -16,6 +16,12 @@ interface ShareDialogProps {
   fileId: string;
   fileName: string;
   fileType?: string;
+  /**
+   * Whether the shared file is a note. Only notes have an editor, so only notes
+   * can honor an "edit" share — for any other file type the Can Edit option is
+   * hidden and the share is forced to view-only.
+   */
+  isNote?: boolean;
   onClose: () => void;
 }
 
@@ -77,22 +83,27 @@ function getRelativeTime(minutes: number): string {
   return `${Math.round(diff / 86400000)} hari`;
 }
 
-export function ShareDialog({ fileId, fileName, fileType, onClose }: ShareDialogProps) {
+export function ShareDialog({ fileId, fileName, fileType, isNote = false, onClose }: ShareDialogProps) {
   const [step, setStep] = useState<Step>("configure");
   const [duration, setDuration] = useState<number | null>(60);
   const [maxAccess, setMaxAccess] = useState<number | null>(5);
   const [customAccess, setCustomAccess] = useState("");
   const [showCustomAccess, setShowCustomAccess] = useState(false);
+  // Only notes are editable, so only notes can carry an "edit" permission.
   const [permission, setPermission] = useState<"view" | "edit">("view");
   const [shareUrl, setShareUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Guard against a stale "edit" selection if a non-note ever reuses this
+  // dialog — the server would ignore it, but we never want to send it.
+  const effectivePermission = isNote ? permission : "view";
+
   const handleCreate = useCallback(async () => {
     setLoading(true);
     setError("");
-    const body: Record<string, unknown> = { fileId, permission };
+    const body: Record<string, unknown> = { fileId, permission: effectivePermission };
     if (duration !== null) body.expiresInMinutes = duration;
     if (maxAccess !== null) body.maxAccessCount = maxAccess;
     const res = await apiFetch<{ shareUrl: string }>("/api/shares", {
@@ -106,7 +117,7 @@ export function ShareDialog({ fileId, fileName, fileType, onClose }: ShareDialog
       setError(res.error ?? "Gagal membuat link share");
     }
     setLoading(false);
-  }, [fileId, permission, duration, maxAccess]);
+  }, [fileId, effectivePermission, duration, maxAccess]);
 
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(shareUrl);
@@ -173,36 +184,52 @@ export function ShareDialog({ fileId, fileName, fileType, onClose }: ShareDialog
                     <Shield className="h-3.5 w-3.5" />
                     Permission
                   </label>
-                  <div className="flex gap-2">
-                    {[
-                      { value: "view" as const, label: "View Only", desc: "Recipient can only view", icon: Eye },
-                      { value: "edit" as const, label: "Can Edit", desc: "Recipient can modify", icon: Pencil },
-                    ].map(({ value, label, desc, icon: Icon }) => (
-                      <button
-                        key={value}
-                        onClick={() => setPermission(value)}
-                        className={cn(
-                          "flex-1 flex items-center gap-2.5 rounded-xl border p-3 transition-all",
-                          permission === value
-                            ? "border-accent bg-accent/10"
-                            : "border-border/40 hover:border-border/70 hover:bg-accent/5"
-                        )}
-                      >
-                        <div className={cn(
-                          "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-                          permission === value ? "bg-accent text-white" : "bg-muted/30 text-muted-foreground"
-                        )}>
-                          <Icon className="h-4 w-4" />
-                        </div>
-                        <div className="text-left">
-                          <p className={cn("text-xs font-semibold", permission === value ? "text-accent" : "text-foreground")}>
-                            {label}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground/50">{desc}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  {isNote ? (
+                    <div className="flex gap-2">
+                      {[
+                        { value: "view" as const, label: "View Only", desc: "Recipient can only view", icon: Eye },
+                        { value: "edit" as const, label: "Can Edit", desc: "Recipient can modify", icon: Pencil },
+                      ].map(({ value, label, desc, icon: Icon }) => (
+                        <button
+                          key={value}
+                          onClick={() => setPermission(value)}
+                          className={cn(
+                            "flex-1 flex items-center gap-2.5 rounded-xl border p-3 transition-all",
+                            permission === value
+                              ? "border-accent bg-accent/10"
+                              : "border-border/40 hover:border-border/70 hover:bg-accent/5"
+                          )}
+                        >
+                          <div className={cn(
+                            "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+                            permission === value ? "bg-accent text-white" : "bg-muted/30 text-muted-foreground"
+                          )}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="text-left">
+                            <p className={cn("text-xs font-semibold", permission === value ? "text-accent" : "text-foreground")}>
+                              {label}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground/50">{desc}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    /* Non-notes have no editor — editing isn't possible, so we
+                       show a fixed view-only state instead of a dead toggle. */
+                    <div className="flex items-center gap-2.5 rounded-xl border border-border/40 bg-muted/20 p-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/30 text-muted-foreground">
+                        <Eye className="h-4 w-4" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-semibold text-foreground">View Only</p>
+                        <p className="text-[10px] text-muted-foreground/60">
+                          Tipe file ini tidak bisa diedit — hanya note yang mendukung Can Edit
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Duration */}
@@ -328,7 +355,7 @@ export function ShareDialog({ fileId, fileName, fileType, onClose }: ShareDialog
                   <div className="flex items-center gap-4 text-xs">
                     <div className="flex items-center gap-1.5">
                       <Shield className="h-3 w-3 text-accent/70" />
-                      <span className="capitalize">{permission}</span>
+                      <span className="capitalize">{effectivePermission}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Clock className="h-3 w-3 text-accent/70" />
@@ -407,7 +434,7 @@ export function ShareDialog({ fileId, fileName, fileType, onClose }: ShareDialog
                         <span>Shared via link</span>
                         <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
                         <Lock className="h-3 w-3" />
-                        <span className="capitalize">{permission}</span>
+                        <span className="capitalize">{effectivePermission}</span>
                       </div>
                     </div>
                   </div>

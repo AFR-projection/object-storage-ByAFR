@@ -60,7 +60,9 @@ export async function GET(
     const file = accessible.file;
 
     if (file.isNote || file.r2Key.startsWith("notes/")) {
-      return apiError("Notes cannot be downloaded as files", 400);
+      // Notes aren't stored as R2 objects — they're exported from the editor
+      // (Markdown / TXT / PDF). Open the note to download it.
+      return apiError("Buka note untuk export (Markdown/TXT/PDF) — note tidak disimpan sebagai file", 400);
     }
 
     const exists = await objectExists(file.r2Key);

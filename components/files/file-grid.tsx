@@ -125,7 +125,6 @@ function buildFileMenuItems(
   }
   return [
     { id: "download", label: "Download", icon: Download, onClick: () => onAction("download", file) },
-    { id: "download-progress", label: "Download with progress", icon: Download, onClick: () => onAction("download-progress", file) },
     { id: "share", label: "Share", icon: Share2, onClick: () => onAction("share", file) },
     { id: "rename", label: "Rename", icon: Pencil, onClick: () => onAction("rename", file) },
     { id: "favorite", label: file.isFavorite ? "Unfavorite" : "Favorite", icon: Star, onClick: () => onAction("favorite", file) },

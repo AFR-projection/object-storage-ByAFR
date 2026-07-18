@@ -317,7 +317,7 @@ export default function RecycleBinPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search deleted files..."
-            className="h-10 w-full rounded-xl border border-border/60 bg-surface pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-all"
+            className="h-10 w-full rounded-xl border border-border/60 bg-surface pl-10 pr-4 text-base sm:text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-all"
           />
           {search && (
             <button
