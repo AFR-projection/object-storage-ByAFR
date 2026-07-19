@@ -8,8 +8,9 @@ import { Menu, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { useRealtimeEvents } from "@/hooks/use-realtime-events";
+import { useRealtimeEvents, rememberCurrentSessionId } from "@/hooks/use-realtime-events";
 import { notify } from "@/lib/system/notify-store";
+import { apiFetch } from "@/lib/api/client";
 
 const STORAGE_KEY = "sidebar_collapsed";
 
@@ -60,6 +61,19 @@ export function ClientShell({
   const initialCollapsed = useRef(true);
 
   useRealtimeEvents(true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await apiFetch<{ sessionId?: string }>("/api/auth/login");
+        if (res.success && res.data?.sessionId) {
+          rememberCurrentSessionId(res.data.sessionId);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     try {

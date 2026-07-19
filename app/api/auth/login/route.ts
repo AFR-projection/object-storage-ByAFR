@@ -10,18 +10,49 @@ import {
   destroySession,
   getSessionUser,
   AuthError,
+  deviceLabelFromUa,
+  isBindableIp,
 } from "@/lib/auth/session";
 import { logActivity } from "@/lib/auth/audit";
 import { peekRateLimit, checkRateLimit, resetRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { notifyUser } from "@/lib/whatsapp/notify-user";
-import { parseUserAgent } from "@/lib/access-tracking";
+import { getIpLocation } from "@/lib/access-tracking";
 import {
   createPending2faToken,
   verifyPending2faToken,
   verifyTotpCode,
   consumeRecoveryCode,
 } from "@/lib/security/totp";
+
+async function notifyNewLogin(
+  userId: string,
+  ip: string,
+  userAgent: string
+): Promise<void> {
+  let location: string | null = null;
+  try {
+    if (isBindableIp(ip)) {
+      const loc = await getIpLocation(ip);
+      if (loc) {
+        if (loc.city && loc.city !== "Unknown" && loc.country && loc.country !== "Unknown") {
+          location = `${loc.city}, ${loc.country}`;
+        } else if (loc.country && loc.country !== "Unknown") {
+          location = loc.country;
+        }
+      }
+    }
+  } catch {
+    // ignore geo failures
+  }
+  await notifyUser(userId, {
+    type: "login",
+    at: new Date(),
+    ip,
+    device: deviceLabelFromUa(userAgent),
+    location,
+  });
+}
 
 const loginSchema = z
   .object({
@@ -59,13 +90,6 @@ async function recordIpFailure(ip: string, userId?: string) {
     }
   }
   return result;
-}
-
-/** Human-readable device label from a user-agent, e.g. "Chrome on Windows 11". */
-function deviceLabel(userAgent: string): string {
-  const { browser, os } = parseUserAgent(userAgent);
-  if (browser === "Unknown" && os === "Unknown") return "an unknown device";
-  return `${browser} on ${os}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -142,12 +166,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (newDevice) {
-        void notifyUser(pendingUser.id, {
-          type: "login",
-          at: new Date(),
-          ip,
-          device: deviceLabel(userAgent),
-        });
+        void notifyNewLogin(pendingUser.id, ip, userAgent);
       }
 
       return apiSuccess({
@@ -289,12 +308,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (newDevice) {
-      void notifyUser(user.id, {
-        type: "login",
-        at: new Date(),
-        ip,
-        device: deviceLabel(userAgent),
-      });
+      void notifyNewLogin(user.id, ip, userAgent);
     }
 
     return apiSuccess({
@@ -349,6 +363,7 @@ export async function GET() {
       totpEnabled: user.totpEnabled,
       effectiveUserId: user.effectiveUserId,
       isImpersonating: user.isImpersonating,
+      sessionId: user.sessionId,
     });
   } catch (error) {
     return handleApiError(error);

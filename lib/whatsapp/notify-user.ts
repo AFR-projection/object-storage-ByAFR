@@ -29,7 +29,13 @@ function phoneOf(value: string | null): string | null {
 }
 
 type NotifyEvent =
-  | { type: "login"; at: Date; ip?: string | null; device?: string | null }
+  | {
+      type: "login";
+      at: Date;
+      ip?: string | null;
+      device?: string | null;
+      location?: string | null;
+    }
   | { type: "password_changed"; at: Date }
   | { type: "account_locked"; minutes: number };
 
@@ -56,6 +62,7 @@ export async function notifyUser(userId: string, event: NotifyEvent): Promise<vo
           time: formatTime(event.at),
           ip: event.ip,
           device: event.device,
+          location: event.location,
         });
         break;
       case "password_changed":

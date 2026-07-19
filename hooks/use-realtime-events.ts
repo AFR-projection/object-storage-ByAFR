@@ -4,12 +4,59 @@ import { useEffect, useRef } from "react";
 import type { RealtimeEvent } from "@/lib/realtime/types";
 import { notify, setConnectionStatus, showSystemToast } from "@/lib/system/notify-store";
 
+const SESSION_ID_KEY = "storage_current_session_id";
+
+/** Persist opaque session id for realtime force-logout matching. */
+export function rememberCurrentSessionId(sessionId: string | null | undefined): void {
+  try {
+    if (!sessionId) {
+      sessionStorage.removeItem(SESSION_ID_KEY);
+      return;
+    }
+    sessionStorage.setItem(SESSION_ID_KEY, sessionId);
+  } catch {
+    // ignore
+  }
+}
+
+export function readRememberedSessionId(): string | null {
+  try {
+    return sessionStorage.getItem(SESSION_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function forceLogout(reason: string): void {
+  try {
+    sessionStorage.removeItem(SESSION_ID_KEY);
+  } catch {
+    // ignore
+  }
+  const alert =
+    reason === "ip" ? "SESSION_IP_CHANGED" : "SESSION_REVOKED";
+  window.location.href = `/login?alert=${alert}`;
+}
+
+function shouldForceLogout(event: Extract<RealtimeEvent, { type: "session_revoked" }>): boolean {
+  if (event.wasCurrent) return true;
+  if (event.reason === "revoke_all" || event.reason === "admin_revoke_all") return true;
+  if (event.reason === "revoke_current" || event.reason === "ip_change") return true;
+  if (event.sessionId) {
+    const mine = readRememberedSessionId();
+    if (mine && mine === event.sessionId) return true;
+  }
+  return false;
+}
+
 /** @deprecated Prefer `notify()` — kept for call-site compatibility. */
 export function showRealtimeToast(message: string, durationMs = 4200): void {
   showSystemToast(message, durationMs);
 }
 
-function toastForEvent(event: RealtimeEvent): { title: string; description?: string; tone?: "info" | "success" | "warning" | "system" } | null {
+function toastForEvent(
+  event: RealtimeEvent
+): { title: string; description?: string; tone?: "info" | "success" | "warning" | "system" } | null {
   switch (event.type) {
     case "upload_complete":
       return {
@@ -24,16 +71,15 @@ function toastForEvent(event: RealtimeEvent): { title: string; description?: str
         tone: "info",
       };
     case "session_revoked":
+      if (shouldForceLogout(event)) return null; // redirect handles UX
       return {
         title: "Session updated",
         description:
           event.reason === "revoke_others"
             ? "Other devices were signed out"
-            : event.reason === "revoke_all"
-              ? "All sessions were revoked"
-              : event.reason === "ip_change"
-                ? "Session revoked due to IP change"
-                : "A session was revoked",
+            : event.reason === "admin_revoke_one"
+              ? "An admin revoked one of your sessions"
+              : "A session was revoked",
         tone: "warning",
       };
     case "heartbeat":
@@ -46,6 +92,7 @@ function toastForEvent(event: RealtimeEvent): { title: string; description?: str
 /**
  * Connects to GET /api/events (SSE) while authenticated.
  * Updates connection status + elegant system toasts.
+ * Force-logs out this browser when its session is revoked remotely.
  */
 export function useRealtimeEvents(enabled = true): void {
   const attemptRef = useRef(0);
@@ -99,6 +146,16 @@ export function useRealtimeEvents(enabled = true): void {
       es.onmessage = (msg) => {
         try {
           const event = JSON.parse(msg.data) as RealtimeEvent;
+          if (event.type === "session_revoked" && shouldForceLogout(event)) {
+            const reason =
+              event.reason === "ip_change"
+                ? "ip"
+                : event.reason === "admin_revoke_all" || event.reason === "admin_revoke_one"
+                  ? "revoked"
+                  : "revoked";
+            forceLogout(reason);
+            return;
+          }
           const text = toastForEvent(event);
           if (text) {
             notify({

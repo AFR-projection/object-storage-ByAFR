@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type SecurityAlertPayload = {
-  code: "SESSION_IP_CHANGED" | "SESSION_INACTIVE";
+  code: "SESSION_IP_CHANGED" | "SESSION_INACTIVE" | "SESSION_REVOKED";
   message?: string;
   previousIp?: string;
   currentIp?: string;
@@ -43,6 +43,7 @@ export function SecurityAlertBanner({
   className?: string;
 }) {
   const isIp = alert.code === "SESSION_IP_CHANGED";
+  const isRevoked = alert.code === "SESSION_REVOKED";
 
   return (
     <div
@@ -51,21 +52,28 @@ export function SecurityAlertBanner({
         "relative mb-5 rounded-xl border px-4 py-3 text-sm",
         isIp
           ? "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100"
-          : "border-orange-500/30 bg-orange-500/10 text-orange-900 dark:text-orange-100",
+          : isRevoked
+            ? "border-rose-500/30 bg-rose-500/10 text-rose-900 dark:text-rose-100"
+            : "border-orange-500/30 bg-orange-500/10 text-orange-900 dark:text-orange-100",
         className
       )}
     >
       <div className="flex gap-3">
         <div className="mt-0.5 shrink-0">
-          {isIp ? (
-            <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          {isIp || isRevoked ? (
+            <ShieldAlert
+              className={cn(
+                "h-5 w-5",
+                isIp ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"
+              )}
+            />
           ) : (
             <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
           )}
         </div>
         <div className="min-w-0 flex-1 pr-6">
           <p className="font-semibold tracking-tight">
-            {isIp ? "Security Alert" : "Session expired"}
+            {isIp ? "Security Alert" : isRevoked ? "Signed out remotely" : "Session expired"}
           </p>
           {isIp ? (
             <div className="mt-1 space-y-1 text-[13px] opacity-90">
@@ -80,6 +88,11 @@ export function SecurityAlertBanner({
               </p>
               <p className="pt-1">Please sign in again to continue.</p>
             </div>
+          ) : isRevoked ? (
+            <p className="mt-1 text-[13px] opacity-90">
+              {alert.message ||
+                "This device was signed out from another session or by an administrator. Please sign in again."}
+            </p>
           ) : (
             <p className="mt-1 text-[13px] opacity-90">
               {alert.message ||
@@ -120,7 +133,7 @@ export function useSecurityAlertFromStorage(): {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const code = params.get("alert");
-    if (code === "SESSION_IP_CHANGED" || code === "SESSION_INACTIVE") {
+    if (code === "SESSION_IP_CHANGED" || code === "SESSION_INACTIVE" || code === "SESSION_REVOKED") {
       setAlert({
         code,
         previousIp: params.get("previousIp") ?? undefined,

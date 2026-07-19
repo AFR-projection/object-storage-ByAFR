@@ -13,8 +13,10 @@ import { useState, use } from "react";
 import {
   ArrowLeft, FileText, Activity, Shield,
   HardDrive, Star, Trash2, Edit, Save, X, KeyRound,
-  Upload, Download, LogIn, Loader2, Eye, EyeOff, AlertCircle,
+  Upload, Download, LogIn, Loader2, Eye, EyeOff, AlertCircle, LogOut, Laptop, Smartphone,
 } from "lucide-react";
+import { notify } from "@/lib/system/notify-store";
+import { formatDistanceToNow } from "date-fns";
 
 interface UserDetail {
   user: {
@@ -55,6 +57,10 @@ interface UserDetail {
     id: string;
     ip: string | null;
     userAgent: string | null;
+    deviceLabel?: string | null;
+    deviceKind?: string | null;
+    locationLabel?: string | null;
+    lastActiveAt?: string;
     createdAt: string;
     expiresAt: string;
   }>;
@@ -94,6 +100,7 @@ export default function UserDetailPage({
   const [saving, setSaving] = useState(false);
   const [showPwNew, setShowPwNew] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [revokingSession, setRevokingSession] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-user-detail", id],
@@ -392,35 +399,114 @@ export default function UserDetailPage({
         transition={{ delay: 0.4 }}
       >
         <Card className="border-border/50">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle className="flex items-center gap-2">
               <Shield className="h-4 w-4 text-muted-foreground" />
               Active Sessions ({sessions.length})
             </CardTitle>
+            {sessions.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-rose-600 hover:text-rose-700"
+                disabled={revokingSession !== null}
+                onClick={async () => {
+                  if (!confirm(`Sign out all devices for ${user.username}?`)) return;
+                  setRevokingSession("all");
+                  try {
+                    const res = await apiFetch(
+                      `/api/admin/users/${user.id}/sessions?all=1`,
+                      { method: "DELETE" }
+                    );
+                    if (!res.success) {
+                      notify({ title: "Failed", description: res.error, tone: "warning" });
+                      return;
+                    }
+                    notify({ title: "All sessions revoked", tone: "success" });
+                    queryClient.invalidateQueries({ queryKey: ["admin-user-detail", user.id] });
+                  } finally {
+                    setRevokingSession(null);
+                  }
+                }}
+              >
+                {revokingSession === "all" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <LogOut className="h-3.5 w-3.5" />
+                )}
+                Revoke all
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {sessions.map((session) => (
-                <div key={session.id} className="flex items-center justify-between rounded-xl border border-border/40 px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10">
-                      <LogIn className="h-4 w-4 text-accent" />
+              {sessions.map((session) => {
+                const Icon = session.deviceKind === "mobile" ? Smartphone : Laptop;
+                return (
+                  <div
+                    key={session.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border/40 px-4 py-3"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10">
+                        <Icon className="h-4 w-4 text-accent" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {session.deviceLabel || "Unknown device"}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {session.locationLabel ? `${session.locationLabel} · ` : ""}
+                          <span className="font-mono">{session.ip ?? "Unknown IP"}</span>
+                          {session.lastActiveAt
+                            ? ` · Active ${formatDistanceToNow(new Date(session.lastActiveAt), { addSuffix: true })}`
+                            : ""}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-mono text-muted-foreground">{session.ip ?? "Unknown IP"}</p>
-                      <p className="text-xs text-muted-foreground/60 truncate max-w-xs">
-                        {session.userAgent?.slice(0, 60) ?? "Unknown"}
-                      </p>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <div className="hidden text-right sm:block">
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(session.createdAt, "short")}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/60">
+                          Expires {formatDate(session.expiresAt, "short")}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-rose-500"
+                        disabled={revokingSession !== null}
+                        title="Revoke session"
+                        onClick={async () => {
+                          setRevokingSession(session.id);
+                          try {
+                            const res = await apiFetch(
+                              `/api/admin/users/${user.id}/sessions?sessionId=${encodeURIComponent(session.id)}`,
+                              { method: "DELETE" }
+                            );
+                            if (!res.success) {
+                              notify({ title: "Failed", description: res.error, tone: "warning" });
+                              return;
+                            }
+                            notify({ title: "Session revoked", tone: "success" });
+                            queryClient.invalidateQueries({ queryKey: ["admin-user-detail", user.id] });
+                          } finally {
+                            setRevokingSession(null);
+                          }
+                        }}
+                      >
+                        {revokingSession === session.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">{formatDate(session.createdAt, "short")}</p>
-                    <p className="text-[10px] text-muted-foreground/60">
-                      Expires {formatDate(session.expiresAt, "short")}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {sessions.length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">No active sessions</p>
               )}

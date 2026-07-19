@@ -2,7 +2,13 @@ import { NextRequest } from "next/server";
 import { and, desc, eq, gt, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sessions } from "@/lib/db/schema";
-import { requireAuth, destroySession, getClientIp, deviceLabelFromUa } from "@/lib/auth/session";
+import {
+  requireAuth,
+  destroySession,
+  getClientIp,
+  deviceLabelFromUa,
+  deviceKindFromUa,
+} from "@/lib/auth/session";
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { logActivity } from "@/lib/auth/audit";
@@ -11,6 +17,27 @@ import { publishToUser } from "@/lib/realtime/events";
 function truncateId(id: string): string {
   if (id.length <= 10) return id;
   return `${id.slice(0, 4)}…${id.slice(-4)}`;
+}
+
+function mapSessionRow(
+  s: typeof sessions.$inferSelect,
+  currentSessionId: string
+) {
+  return {
+    id: s.id,
+    idShort: truncateId(s.id),
+    ip: s.ip,
+    userAgent: s.userAgent,
+    deviceLabel: s.deviceLabel || deviceLabelFromUa(s.userAgent),
+    deviceKind: deviceKindFromUa(s.userAgent),
+    locationLabel: s.locationLabel,
+    locationCity: s.locationCity,
+    locationCountry: s.locationCountry,
+    createdAt: s.createdAt,
+    lastActiveAt: s.lastActiveAt,
+    expiresAt: s.expiresAt,
+    isCurrent: s.id === currentSessionId,
+  };
 }
 
 export async function GET() {
@@ -23,17 +50,8 @@ export async function GET() {
       .orderBy(desc(sessions.lastActiveAt));
 
     return apiSuccess({
-      sessions: rows.map((s) => ({
-        id: s.id,
-        idShort: truncateId(s.id),
-        ip: s.ip,
-        userAgent: s.userAgent,
-        deviceLabel: s.deviceLabel || deviceLabelFromUa(s.userAgent),
-        createdAt: s.createdAt,
-        lastActiveAt: s.lastActiveAt,
-        expiresAt: s.expiresAt,
-        isCurrent: s.id === user.sessionId,
-      })),
+      currentSessionId: user.sessionId,
+      sessions: rows.map((s) => mapSessionRow(s, user.sessionId)),
     });
   } catch (error) {
     return handleApiError(error);
@@ -56,10 +74,10 @@ export async function DELETE(request: NextRequest) {
         metadata: { reason: "revoke_all" },
       });
       publishToUser(user.id, {
-      type: "session_revoked",
-      reason: "revoke_all",
-      wasCurrent: true,
-    }).catch(() => {});
+        type: "session_revoked",
+        reason: "revoke_all",
+        wasCurrent: true,
+      }).catch(() => {});
       return apiSuccess({ revoked: "all" });
     }
 

@@ -35,6 +35,7 @@ export function loginAlert(opts: {
   time: string;
   ip?: string | null;
   device?: string | null;
+  location?: string | null;
 }): string {
   const lines = [
     `*${APP}*`,
@@ -45,6 +46,7 @@ export function loginAlert(opts: {
   ];
   if (opts.ip) lines.push(`IP: ${opts.ip}`);
   if (opts.device) lines.push(`Device: ${opts.device}`);
+  if (opts.location) lines.push(`Location: ${opts.location}`);
   lines.push(``, `If this wasn't you, change your password immediately.`);
   return lines.join("\n");
 }

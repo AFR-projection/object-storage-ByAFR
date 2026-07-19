@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
-import { eq, desc, count, sum, and, isNull } from "drizzle-orm";
+import { eq, desc, count, sum, and, isNull, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, files, folders, activityLogs, sessions } from "@/lib/db/schema";
 import { requireMasterOrApiKey } from "@/lib/auth/api-key";
-import { getClientIp } from "@/lib/auth/session";
+import { getClientIp, deviceLabelFromUa, deviceKindFromUa } from "@/lib/auth/session";
 import { logActivity } from "@/lib/auth/audit";
 import { validateCsrf } from "@/lib/security";
 import { validatePasswordStrength } from "@/lib/security/password-policy";
@@ -48,9 +48,9 @@ export async function GET(
     const userSessions = await db
       .select()
       .from(sessions)
-      .where(eq(sessions.userId, id))
-      .orderBy(desc(sessions.createdAt))
-      .limit(10);
+      .where(and(eq(sessions.userId, id), gt(sessions.expiresAt, new Date())))
+      .orderBy(desc(sessions.lastActiveAt))
+      .limit(20);
 
     // Storage by file type
     const storageByType = await db
@@ -69,7 +69,17 @@ export async function GET(
       files: userFiles,
       folders: userFolders,
       activity: userActivity,
-      sessions: userSessions,
+      sessions: userSessions.map((s) => ({
+        id: s.id,
+        ip: s.ip,
+        userAgent: s.userAgent,
+        deviceLabel: s.deviceLabel || deviceLabelFromUa(s.userAgent),
+        deviceKind: deviceKindFromUa(s.userAgent),
+        locationLabel: s.locationLabel,
+        lastActiveAt: s.lastActiveAt,
+        createdAt: s.createdAt,
+        expiresAt: s.expiresAt,
+      })),
       storageByType,
     });
   } catch (error) {

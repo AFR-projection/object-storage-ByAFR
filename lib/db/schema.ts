@@ -97,6 +97,11 @@ export const sessions = pgTable(
     ip: text("ip"),
     userAgent: text("user_agent"),
     deviceLabel: text("device_label"),
+    /** Approx location from IP lookup, e.g. "Jakarta, Indonesia" */
+    locationLabel: text("location_label"),
+    locationCity: text("location_city"),
+    locationCountry: text("location_country"),
+    locationRegion: text("location_region"),
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
     impersonatingUserId: uuid("impersonating_user_id").references(() => users.id, {
       onDelete: "set null",

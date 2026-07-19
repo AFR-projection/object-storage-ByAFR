@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { cookies, headers } from "next/headers";
 import { eq, and, gt, desc, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -6,6 +7,7 @@ import { nanoid } from "nanoid";
 import { getAdminSettings } from "@/lib/admin-settings";
 import { logActivity } from "@/lib/auth/audit";
 import { cookieSecure } from "@/lib/env/runtime";
+import { getIpLocation, parseUserAgent } from "@/lib/access-tracking";
 
 const SESSION_COOKIE = "storage_session";
 const ROTATION_INTERVAL_MS = 1000 * 60 * 60 * 24; // 24 hours
@@ -94,13 +96,77 @@ export async function getClientIpFromHeaders(): Promise<string> {
   });
 }
 
+/** Human-readable device label, e.g. "Chrome on Windows 11". */
 export function deviceLabelFromUa(userAgent: string | null | undefined): string {
   if (!userAgent) return "Unknown device";
-  if (/Mobile|Android|iPhone/i.test(userAgent)) return "Mobile browser";
-  if (/Macintosh|Mac OS/i.test(userAgent)) return "Mac browser";
-  if (/Windows/i.test(userAgent)) return "Windows browser";
-  if (/Linux/i.test(userAgent)) return "Linux browser";
-  return "Browser";
+  const { browser, os, device } = parseUserAgent(userAgent);
+  if (browser === "Unknown" && os === "Unknown") {
+    if (device === "Mobile") return "Mobile browser";
+    if (device === "Tablet") return "Tablet browser";
+    return "Unknown device";
+  }
+  if (browser === "Unknown") return os;
+  if (os === "Unknown") return browser;
+  return `${browser} on ${os}`;
+}
+
+export type DeviceKind = "desktop" | "mobile" | "tablet" | "unknown";
+
+export function deviceKindFromUa(userAgent: string | null | undefined): DeviceKind {
+  if (!userAgent) return "unknown";
+  const { device } = parseUserAgent(userAgent);
+  if (device === "Mobile") return "mobile";
+  if (device === "Tablet") return "tablet";
+  if (device === "Desktop") return "desktop";
+  return "unknown";
+}
+
+/** Stable soft fingerprint from UA (not for auth — only for "same browser" hints). */
+export function softUaFingerprint(userAgent: string | null | undefined): string | null {
+  if (!userAgent) return null;
+  return createHash("sha256").update(userAgent).digest("hex").slice(0, 16);
+}
+
+function formatLocationLabel(parts: {
+  city?: string | null;
+  region?: string | null;
+  country?: string | null;
+}): string | null {
+  const city = parts.city?.trim();
+  const region = parts.region?.trim();
+  const country = parts.country?.trim();
+  if (city && country && city !== "Unknown" && country !== "Unknown") {
+    return region && region !== city ? `${city}, ${region}, ${country}` : `${city}, ${country}`;
+  }
+  if (country && country !== "Unknown") return country;
+  if (city && city !== "Unknown") return city;
+  return null;
+}
+
+/**
+ * Fire-and-forget IP geolocation enrich for a session row.
+ * Never blocks login; failures are silent.
+ */
+export function enrichSessionLocation(sessionId: string, ip: string | null | undefined): void {
+  if (!ip || !isBindableIp(ip)) return;
+  void (async () => {
+    try {
+      const loc = await getIpLocation(ip);
+      if (!loc) return;
+      const locationLabel = formatLocationLabel(loc);
+      await db
+        .update(sessions)
+        .set({
+          locationLabel,
+          locationCity: loc.city !== "Unknown" ? loc.city : null,
+          locationCountry: loc.country !== "Unknown" ? loc.country : null,
+          locationRegion: loc.region || null,
+        })
+        .where(eq(sessions.id, sessionId));
+    } catch (err) {
+      console.warn(`[session] location enrich failed for ${sessionId}:`, err);
+    }
+  })();
 }
 
 export type SessionUser = User & {
@@ -168,6 +234,8 @@ export async function createSession(
     impersonatingUserId: impersonatingUserId ?? null,
   });
 
+  enrichSessionLocation(sessionId, ip);
+
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, sessionId, {
     httpOnly: true,
@@ -208,7 +276,14 @@ export async function rotateSession(
   userId: string,
   ip?: string,
   userAgent?: string,
-  impersonatingUserId?: string | null
+  impersonatingUserId?: string | null,
+  preserve?: {
+    deviceLabel?: string | null;
+    locationLabel?: string | null;
+    locationCity?: string | null;
+    locationCountry?: string | null;
+    locationRegion?: string | null;
+  }
 ): Promise<string> {
   const settings = await getAdminSettings();
   const durationMs = Math.max(1, settings.sessionDurationHours || 168) * 60 * 60 * 1000;
@@ -224,10 +299,19 @@ export async function rotateSession(
     expiresAt,
     ip: ip ?? null,
     userAgent: userAgent ?? null,
-    deviceLabel: deviceLabelFromUa(userAgent),
+    deviceLabel: preserve?.deviceLabel ?? deviceLabelFromUa(userAgent),
+    locationLabel: preserve?.locationLabel ?? null,
+    locationCity: preserve?.locationCity ?? null,
+    locationCountry: preserve?.locationCountry ?? null,
+    locationRegion: preserve?.locationRegion ?? null,
     lastActiveAt: now,
     impersonatingUserId: impersonatingUserId ?? null,
   });
+
+  // Re-enrich if we still have no location (e.g. first lookup failed earlier)
+  if (!preserve?.locationLabel) {
+    enrichSessionLocation(newSessionId, ip);
+  }
 
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, newSessionId, {
@@ -315,7 +399,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   let activeSessionId = session.id;
 
-  // Opaque session ID rotation after 24h
+  // Opaque session ID rotation after 24h — preserve device/location metadata
   const sessionAge = Date.now() - new Date(session.createdAt).getTime();
   if (sessionAge > ROTATION_INTERVAL_MS) {
     activeSessionId = await rotateSession(
@@ -323,7 +407,14 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       user.id,
       currentIp !== "unknown" ? currentIp : session.ip ?? undefined,
       session.userAgent ?? undefined,
-      session.impersonatingUserId
+      session.impersonatingUserId,
+      {
+        deviceLabel: session.deviceLabel,
+        locationLabel: session.locationLabel,
+        locationCity: session.locationCity,
+        locationCountry: session.locationCountry,
+        locationRegion: session.locationRegion,
+      }
     );
   } else {
     // Touch lastActiveAt (throttle ~1/min)

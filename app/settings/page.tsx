@@ -3,19 +3,20 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { KeyRound, User, Monitor, Shield, Loader2, LogOut, Laptop, Trash2, RefreshCw, Copy, Key, Webhook, Plus } from "lucide-react";
+import { KeyRound, User, Monitor, Shield, Loader2, Key, Webhook, Plus, Copy, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTheme } from "@/components/theme-provider";
 import { apiFetch } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
 import {
   PasswordSection as SharedPasswordSection,
   TwoFactorSection as SharedTwoFactorSection,
 } from "@/components/account/account-security-sections";
 import { ApiKeysSection } from "@/components/settings/api-keys-section";
+import { SessionsSection } from "@/components/settings/sessions-section";
+import { rememberCurrentSessionId } from "@/hooks/use-realtime-events";
 interface SessionUser {
   id: string;
   username: string;
@@ -24,6 +25,7 @@ interface SessionUser {
   usedBytes: number;
   phone?: string | null;
   totpEnabled?: boolean;
+  sessionId?: string;
 }
 
 export default function SettingsPage() {
@@ -32,6 +34,7 @@ export default function SettingsPage() {
     queryFn: async () => {
       const res = await apiFetch<SessionUser>("/api/auth/login");
       if (!res.success || !res.data) throw new Error(res.error ?? "Not authenticated");
+      rememberCurrentSessionId(res.data.sessionId);
       return res.data;
     },
   });
@@ -98,9 +101,9 @@ function SettingsContent({ user }: { user: SessionUser }) {
     },
     {
       id: "sessions",
-      title: "Sessions",
-      description: "Manage your active sessions",
-      icon: Laptop,
+      title: "Sessions & devices",
+      description: "See where you're signed in and revoke access",
+      icon: Monitor,
       gradient: "from-emerald-500 to-teal-500",
       component: <SessionsSection />,
     },
@@ -407,170 +410,6 @@ function MoonIcon(props: React.SVGProps<SVGSVGElement>) {
     <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
     </svg>
-  );
-}
-
-// ─── Sessions Section ─────────────────────────────────────────────────────────
-
-type DeviceSession = {
-  id: string;
-  idShort?: string;
-  ip: string | null;
-  userAgent: string | null;
-  deviceLabel: string;
-  createdAt: string;
-  lastActiveAt: string;
-  expiresAt: string;
-  isCurrent: boolean;
-};
-
-function SessionsSection() {
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
-  const router = useRouter();
-
-  const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ["auth-sessions"],
-    queryFn: async () => {
-      const res = await apiFetch<{ sessions: DeviceSession[] }>("/api/auth/sessions");
-      if (!res.success) throw new Error(res.error ?? "Failed to load sessions");
-      return res.data!.sessions;
-    },
-  });
-
-  async function handleRevoke(id: string, wasCurrent: boolean) {
-    setRevokingId(id);
-    try {
-      const res = await apiFetch<{ wasCurrent?: boolean }>(`/api/auth/sessions/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.success) return;
-      if (wasCurrent || res.data?.wasCurrent) {
-        router.push("/login");
-        router.refresh();
-        return;
-      }
-      await refetch();
-    } finally {
-      setRevokingId(null);
-    }
-  }
-
-  async function handleRevokeOthers() {
-    setLoggingOut(true);
-    try {
-      await apiFetch("/api/auth/sessions", { method: "DELETE" });
-      await refetch();
-    } finally {
-      setLoggingOut(false);
-    }
-  }
-
-  async function handleLogoutAll() {
-    setLoggingOut(true);
-    try {
-      await apiFetch("/api/auth/sessions?all=1", { method: "DELETE" });
-      router.push("/login");
-      router.refresh();
-    } catch {
-      setLoggingOut(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground/80">
-          Devices currently signed in to your account.
-        </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 shrink-0"
-          onClick={() => refetch()}
-          disabled={isFetching}
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
-        </Button>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center py-6">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {(data ?? []).map((session) => (
-            <div
-              key={session.id}
-              className="flex items-start gap-3 rounded-xl border border-border/50 bg-muted/10 p-3"
-            >
-              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
-                <Laptop className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium">{session.deviceLabel}</p>
-                  {session.isCurrent && (
-                    <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                      This device
-                    </span>
-                  )}
-                </div>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  IP: {session.ip ?? "unknown"} · Session {session.idShort ?? session.id.slice(0, 8)} · Last
-                  active {new Date(session.lastActiveAt).toLocaleString()}
-                </p>
-                <p className="text-[10px] text-muted-foreground/70">
-                  Signed in {new Date(session.createdAt).toLocaleString()}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-red-500"
-                disabled={revokingId === session.id}
-                onClick={() => handleRevoke(session.id, session.isCurrent)}
-                title="Revoke session"
-              >
-                {revokingId === session.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          ))}
-          {(data ?? []).length === 0 && (
-            <p className="py-4 text-center text-sm text-muted-foreground">No active sessions</p>
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button
-          variant="secondary"
-          onClick={handleRevokeOthers}
-          disabled={loggingOut}
-          className="flex-1"
-        >
-          Sign out other devices
-        </Button>
-        <Button
-          variant="destructive"
-          onClick={handleLogoutAll}
-          disabled={loggingOut}
-          className="flex-1"
-        >
-          {loggingOut ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <LogOut className="mr-2 h-4 w-4" />
-          )}
-          Log out all sessions
-        </Button>
-      </div>
-    </div>
   );
 }
 
