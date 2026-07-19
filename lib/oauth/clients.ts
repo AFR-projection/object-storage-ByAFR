@@ -85,13 +85,35 @@ export async function validateOAuthClientRedirect(
 ): Promise<{ ok: true; client: NonNullable<Awaited<ReturnType<typeof getOAuthClient>>> } | { ok: false; error: string }> {
   const client = await getOAuthClient(clientId);
   if (!client) return { ok: false, error: "invalid_client" };
-  if (!client.redirectUris.includes(redirectUri)) {
-    return { ok: false, error: "invalid_redirect_uri" };
-  }
   if (!isAllowedRedirectUri(redirectUri)) {
     return { ok: false, error: "invalid_redirect_uri" };
   }
-  return { ok: true, client };
+  if (redirectUriAllowedForClient(client.redirectUris, redirectUri)) {
+    return { ok: true, client };
+  }
+  return { ok: false, error: "invalid_redirect_uri" };
+}
+
+/** Exact match, or same allowed host (ChatGPT dynamic /connector/oauth/* paths). */
+function redirectUriAllowedForClient(registeredUris: string[], redirectUri: string): boolean {
+  if (registeredUris.includes(redirectUri)) return true;
+
+  let redirectUrl: URL;
+  try {
+    redirectUrl = new URL(redirectUri);
+  } catch {
+    return false;
+  }
+
+  return registeredUris.some((registered) => {
+    if (registered === redirectUri) return true;
+    try {
+      const reg = new URL(registered);
+      return reg.hostname === redirectUrl.hostname && isAllowedRedirectUri(registered);
+    } catch {
+      return false;
+    }
+  });
 }
 
 export class OAuthClientError extends Error {

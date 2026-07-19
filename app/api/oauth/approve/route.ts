@@ -3,13 +3,18 @@ import { requireAuth } from "@/lib/auth/session";
 import { validateOAuthClientRedirect } from "@/lib/oauth/clients";
 import { createAuthorizationCode } from "@/lib/oauth/codes";
 import { parseScopes } from "@/lib/oauth/constants";
-import { oauthError } from "@/lib/oauth/http";
+import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { validateCsrf } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
+    if (!(await validateCsrf(request))) {
+      return apiError("Invalid CSRF token", 403);
+    }
+
     const session = await requireAuth();
     const body = await request.json();
     const clientId = String(body.client_id ?? "");
@@ -20,12 +25,17 @@ export async function POST(request: NextRequest) {
     const codeChallengeMethod = String(body.code_challenge_method ?? "S256");
 
     if (!clientId || !redirectUri || !codeChallenge) {
-      return oauthError("invalid_request", "Missing required parameters");
+      return apiError("Missing required OAuth parameters", 400);
     }
 
     const clientCheck = await validateOAuthClientRedirect(clientId, redirectUri);
     if (!clientCheck.ok) {
-      return oauthError(clientCheck.error, undefined, 400);
+      return apiError(
+        clientCheck.error === "invalid_redirect_uri"
+          ? "Redirect URI tidak cocok dengan client OAuth"
+          : "OAuth client tidak valid",
+        400
+      );
     }
 
     const scopes = parseScopes(scope);
@@ -42,8 +52,8 @@ export async function POST(request: NextRequest) {
     redirect.searchParams.set("code", code);
     if (state) redirect.searchParams.set("state", state);
 
-    return Response.json({ redirect_to: redirect.toString() });
+    return apiSuccess({ redirect_to: redirect.toString() });
   } catch (e) {
-    return oauthError("access_denied", e instanceof Error ? e.message : "Unauthorized", 401);
+    return handleApiError(e);
   }
 }
