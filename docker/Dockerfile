@@ -17,13 +17,25 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+ENV WA_SESSIONS_DIR=/app/wa-sessions
+
+# su-exec: drop root → nextjs after fixing volume permissions in entrypoint
+RUN apk add --no-cache su-exec \
+  && addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 nextjs \
+  && mkdir -p /app/wa-sessions \
+  && chown -R nextjs:nodejs /app/wa-sessions
+
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-USER nextjs
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+# Entrypoint runs as root briefly to chown the sessions volume, then exec as nextjs.
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "server.js"]

@@ -27,8 +27,15 @@ export interface WAInstance {
 
 const instances = new Map<string, WAInstance>();
 
+/** Root directory for Baileys multi-file auth state (persist across deploys). */
+export function sessionsRoot() {
+  const fromEnv = process.env.WA_SESSIONS_DIR?.trim();
+  if (fromEnv) return path.resolve(fromEnv);
+  return path.join(process.cwd(), "wa-sessions");
+}
+
 function sessionDir(senderId: string) {
-  return path.join(process.cwd(), "wa-sessions", senderId);
+  return path.join(sessionsRoot(), senderId);
 }
 
 /**
@@ -264,10 +271,15 @@ export async function ensureConnected(
   if (existing?.status === "connected") return true;
 
   // Only re-init if a persisted session exists (creds present on disk).
-  const credsPath = path.join(sessionDir(senderId), "creds.json");
-  if (!existsSync(credsPath)) return false;
+  const credsFile = path.join(sessionDir(senderId), "creds.json");
+  if (!existsSync(credsFile)) return false;
 
-  if (!existing) {
+  // Revive when missing, or when a previous attempt ended in error/disconnect.
+  if (
+    !existing ||
+    existing.status === "disconnected" ||
+    existing.status === "error"
+  ) {
     await initWAClient(senderId, phoneNumber, false).catch(() => {});
   }
 
@@ -275,7 +287,7 @@ export async function ensureConnected(
   while (Date.now() < deadline) {
     const inst = instances.get(senderId);
     if (inst?.status === "connected") return true;
-    if (inst?.status === "disconnected") return false;
+    if (inst?.status === "disconnected" || inst?.status === "error") return false;
     await new Promise((r) => setTimeout(r, 500));
   }
   return instances.get(senderId)?.status === "connected";

@@ -23,6 +23,17 @@ import type { WhatsappSender } from "@/lib/db/schema";
 
 type Method = "qr" | "pairing";
 type QrData = { qrCode: string | null; pairingCode: string | null; status: string };
+type SenderRow = WhatsappSender & {
+  liveStatus?: string;
+  hasLiveSocket?: boolean;
+};
+
+function effectiveStatus(sender: SenderRow): string {
+  if (sender.hasLiveSocket && sender.liveStatus && sender.liveStatus !== "offline") {
+    return sender.liveStatus;
+  }
+  return sender.status;
+}
 
 export default function WhatsAppSettings() {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -36,7 +47,7 @@ export default function WhatsAppSettings() {
   const { data: senders = [], isLoading } = useQuery({
     queryKey: ["whatsapp-senders"],
     queryFn: async () => {
-      const res = await apiFetch<WhatsappSender[]>("/api/admin/whatsapp/senders");
+      const res = await apiFetch<SenderRow[]>("/api/admin/whatsapp/senders");
       return res.data ?? [];
     },
     refetchInterval: 4000,
@@ -148,20 +159,28 @@ export default function WhatsAppSettings() {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {senders.map((sender) => (
+          {senders.map((sender) => {
+            const status = effectiveStatus(sender);
+            return (
             <motion.div key={sender.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
               <Card>
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <span className={cn("w-3 h-3 rounded-full", statusColor(sender.status))} />
+                        <span className={cn("w-3 h-3 rounded-full", statusColor(status))} />
                         <h3 className="font-semibold text-lg">{sender.displayName}</h3>
                         <span className="text-sm px-2 py-1 bg-muted rounded">
                           {sender.phoneNumber}
                         </span>
                       </div>
-                      <p className="text-sm font-medium">{statusText(sender.status)}</p>
+                      <p className="text-sm font-medium">{statusText(status)}</p>
+                      {sender.liveStatus && sender.liveStatus !== sender.status && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Live socket: {sender.liveStatus}
+                          {!sender.hasLiveSocket ? " (offline in process — reconnect if OTP fails)" : ""}
+                        </p>
+                      )}
                       {sender.errorMessage && (
                         <p className="text-xs text-red-600 mt-1 truncate max-w-md">
                           {sender.errorMessage}
@@ -169,7 +188,7 @@ export default function WhatsAppSettings() {
                       )}
                     </div>
                     <div className="flex gap-2">
-                      {sender.status !== "connected" && (
+                      {status !== "connected" && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -212,7 +231,8 @@ export default function WhatsAppSettings() {
                 </CardContent>
               </Card>
             </motion.div>
-          ))}
+            );
+          })}
         </div>
       )}
 

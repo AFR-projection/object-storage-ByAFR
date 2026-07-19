@@ -7,7 +7,9 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ["sharp", "@node-rs/argon2"],
+  // baileys pulls Node-only deps (ws, etc.) — keep it external so WA sockets
+  // work in the standalone Docker server, not just `next dev`.
+  serverExternalPackages: ["sharp", "@node-rs/argon2", "baileys", "qrcode"],
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },

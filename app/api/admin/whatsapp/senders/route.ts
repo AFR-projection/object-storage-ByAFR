@@ -5,7 +5,12 @@ import { whatsappSenders } from "@/lib/db/schema";
 import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { apiError, apiSuccess, handleApiError } from "@/lib/api/response";
 import { z } from "zod";
-import { initWAClient, disconnectWAClient } from "@/lib/whatsapp/whatsapp-client";
+import {
+  initWAClient,
+  disconnectWAClient,
+  getWAInstance,
+} from "@/lib/whatsapp/whatsapp-client";
+import { ensureWhatsAppBootstrapped } from "@/lib/whatsapp/whatsapp-bootstrap";
 
 const createSenderSchema = z.object({
   phoneNumber: z.string().min(8).max(20),
@@ -23,8 +28,19 @@ export async function GET(request: NextRequest) {
   try {
     await requireMasterOrApiKey(request, "whatsapp");
 
+    await ensureWhatsAppBootstrapped().catch(() => {});
+
     const senders = await db.select().from(whatsappSenders);
-    return apiSuccess(senders);
+    // Merge live in-memory socket status so admin UI reflects reality after restart.
+    const withLive = senders.map((s) => {
+      const live = getWAInstance(s.id);
+      return {
+        ...s,
+        liveStatus: live?.status ?? "offline",
+        hasLiveSocket: !!live?.socket,
+      };
+    });
+    return apiSuccess(withLive);
   } catch (error) {
     return handleApiError(error);
   }

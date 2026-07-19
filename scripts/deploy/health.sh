@@ -79,6 +79,29 @@ check_ssl() {
   fi
 }
 
+check_whatsapp() {
+  # Soft check: warn when no connected sender / no session volume — OTP needs this.
+  local logs volume_ok=0 connected_hint=0
+  logs="$("${COMPOSE[@]}" logs app --tail 80 2>/dev/null || true)"
+
+  if "${COMPOSE[@]}" exec -T app sh -c 'test -d /app/wa-sessions && test -w /app/wa-sessions' 2>/dev/null; then
+    volume_ok=1
+  fi
+
+  if echo "$logs" | grep -qE '\[WA Bootstrap\] Complete|\[WA\] Connected:'; then
+    connected_hint=1
+  fi
+
+  if [[ $volume_ok -eq 1 && $connected_hint -eq 1 ]]; then
+    status_line 0 "WhatsApp" "sessions OK + bootstrap/connect seen in logs"
+  elif [[ $volume_ok -eq 1 ]]; then
+    # Volume present but no live sender yet — common on fresh install; not a hard fail.
+    printf "  %-14s ${YELLOW}WARN${NC} %s\n" "WhatsApp" "sessions volume OK — connect a sender in Admin → WhatsApp"
+  else
+    status_line 1 "WhatsApp" "wa-sessions not writable (OTP will fail after restart)"
+  fi
+}
+
 check_database_quick() {
   init_docker 2>/dev/null || true
   if docker_run --rm --env-file "$ENV_FILE" postgres:16-alpine sh -c \
@@ -100,6 +123,7 @@ run_health() {
   check_app_http
   check_worker
   check_ssl
+  check_whatsapp
   echo
   if [[ $HEALTH_FAILED -ne 0 ]]; then
     fail "Some checks failed. Run: npm run deploy:logs"

@@ -4,6 +4,7 @@ import { eq, and, gt, lt, desc, or } from "drizzle-orm";
 import { sendMessage, ensureConnected } from "./whatsapp-client";
 import { generateOTP, hashOTP } from "./otp-utils";
 import { otpInfo, otpCodeOnly } from "./templates";
+import { ensureWhatsAppBootstrapped } from "./whatsapp-bootstrap";
 
 const OTP_EXPIRY_MINUTES = 5;
 const OTP_RATE_LIMIT_SECONDS = 60;
@@ -11,6 +12,11 @@ const PAIRING_EXPIRY_MINUTES = 15;
 
 /** Return the id of the first active, connected sender, or null if none. */
 async function pickReadySender(): Promise<string | null> {
+  // Belt-and-suspenders: if instrumentation did not run (or raced), restore
+  // sockets from disk before picking a sender. Critical for inbound pairing
+  // replies after a VPS restart.
+  await ensureWhatsAppBootstrapped().catch(() => {});
+
   const senders = await db
     .select()
     .from(whatsappSenders)

@@ -11,6 +11,11 @@ services:
       - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
       - REDIS_DISABLED=false
+      - WA_SESSIONS_DIR=/app/wa-sessions
+    volumes:
+      # Persist Baileys WhatsApp sessions across rebuilds / restarts.
+      # Without this, OTP + inbound pairing break after every deploy.
+      - wa_sessions:/app/wa-sessions
     depends_on:
       redis:
         condition: service_healthy
@@ -78,3 +83,4 @@ services:
 
 volumes:
   redis_data:
+  wa_sessions:

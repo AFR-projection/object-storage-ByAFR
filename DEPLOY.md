@@ -165,7 +165,7 @@ Kalau mau wizard interaktif: `./install.sh --wizard`
 - Database migration + bootstrap admin
 - Health check semua service
 
-### Output sukses:
+**Output sukses:**
 
 ```
 Application : Running
@@ -175,6 +175,17 @@ Worker      : OK
 SSL         : Active
 URL         : https://storage.example.com
 ```
+
+### Setelah install — aktifkan WhatsApp (OTP)
+
+OTP & notifikasi WA butuh **sender terhubung** (Baileys). Setelah app jalan:
+
+1. Login sebagai master → **Admin → WhatsApp**
+2. **Add Sender** → scan QR atau pakai pairing code
+3. Pastikan status **Connected** (hijau)
+4. Coba register user baru — harus terima pesan pairing di WhatsApp
+
+Setelah itu, session tersimpan di volume Docker `wa_sessions` dan **auto-restore** tiap restart/update.
 
 ---
 
@@ -309,6 +320,24 @@ docker compose -f docker/docker-compose.yml logs worker --tail 50
 
 Penyebab umum: Redis down, DATABASE_URL salah, R2 credential invalid.
 
+### OTP / notifikasi WhatsApp tidak jalan
+
+WhatsApp di app ini **self-hosted (Baileys)** — bukan Fonnte/Twilio. Session disimpan di disk (`wa-sessions/`) dan socket harus hidup di proses app.
+
+Setelah deploy/update VPS:
+
+1. Pastikan volume `wa_sessions` terpasang (sudah di `docker-compose.yml`).
+2. Cek log bootstrap:
+   ```bash
+   docker compose -f docker/docker-compose.yml logs app --tail 100 | grep -i WA
+   ```
+   Harus ada `[WA Bootstrap] Restored ...` atau `[WA] Connected: ...`.
+3. Kalau `missingSession` / status `disconnected`: buka **Admin → WhatsApp**, reconnect (QR atau pairing code). Session lama hilang kalau deploy sebelum volume diaktifkan.
+4. Satu instance app saja (jangan scale replica) — socket Baileys stateful di memory.
+5. Setelah reconnect sekali, restart/redeploy berikutnya harus auto-restore (session di volume).
+
+Health check menampilkan baris **WhatsApp** (`OK` / `WARN` / `FAIL`).
+
 ### HTTP 403 saat curl homepage
 
 Sudah diperbaiki — bot block tidak lagi block halaman utama.  
@@ -331,6 +360,7 @@ Internet → Nginx (:443 SSL) → Next.js app (:3000)
                            ↘ Redis → Worker (thumbnail, cleanup)
 Neon PostgreSQL (external)
 Cloudflare R2 (external)
+WhatsApp Baileys (in-app) + volume wa_sessions
 Let's Encrypt (auto renew via cron)
 ```
 
