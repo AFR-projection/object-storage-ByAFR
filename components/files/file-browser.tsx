@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { QUICK_ACTION_EVENT, type QuickAction } from "@/lib/system/quick-actions";
 import { useDropzone } from "react-dropzone";
 import {
-  Upload, FolderPlus, FilePlus, Grid3X3, List, Search, Loader2, Trash2, AlertCircle, FolderUp,
+  Upload, FolderPlus, FilePlus, Grid3X3, List, Search, Trash2, AlertCircle, FolderUp,
   Image, Film, Music, FileText, FileArchive, Star, X, CheckSquare, Square,
-  Download, File, Lock,
+  Download, File, Lock, Move,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,8 @@ import { FolderCard } from "@/components/folders/folder-card";
 import { UploadQueue, traverseDirectory } from "@/lib/upload-queue";
 import { requestDownload, downloadZip } from "@/lib/download/download-actions";
 import { EncryptionSetupDialog } from "./encryption-setup-dialog";
+import { MoveToFolderDialog } from "./move-to-folder-dialog";
+import { useDialogs } from "@/components/ui/dialog-prompts";
 import { motion, AnimatePresence } from "framer-motion";
 
 const NoteEditor = dynamic(() => import("@/components/editors/note-editor").then((m) => m.NoteEditor), { ssr: false });
@@ -71,6 +73,7 @@ interface FileBrowserProps {
 
 export function FileBrowser({ folderId = null, trash = false, favorites = false, selectedFileId = null }: FileBrowserProps) {
   const queryClient = useQueryClient();
+  const { askPrompt, askConfirm, dialogs } = useDialogs();
 
   // View + search + filter + sort
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -81,6 +84,10 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Move-to-folder dialog: holds the file ids being moved (null = closed)
+  const [moveIds, setMoveIds] = useState<string[] | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // File preview / note editor
   const [selectedFile, setSelectedFile] = useState<FileRecord | null>(null);
@@ -328,11 +335,22 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
         setShareFile(file);
         return;
       }
+      if (action === "move") {
+        setMoveIds([file.id]);
+        return;
+      }
       if (trash) {
         if (action === "restore") {
           const res = await apiFetch("/api/files", { method: "PATCH", body: JSON.stringify({ id: file.id, action: "restore" }) });
           if (!res.success) { showError(res.error ?? "Failed to restore"); return; }
         } else if (action === "delete") {
+          const ok = await askConfirm({
+            title: "Delete permanently?",
+            message: `"${file.name}" will be erased forever. This cannot be undone.`,
+            confirmText: "Delete forever",
+            danger: true,
+          });
+          if (!ok) return;
           const res = await apiFetch("/api/files", { method: "DELETE", body: JSON.stringify({ id: file.id, permanent: true }) });
           if (!res.success) { showError(res.error ?? "Failed to delete permanently"); return; }
         }
@@ -346,8 +364,14 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
         const res = await apiFetch("/api/files", { method: "PATCH", body: JSON.stringify({ id: file.id, action: "favorite" }) });
         if (!res.success) { showError(res.error ?? "Failed"); return; }
       } else if (action === "rename") {
-        const name = prompt("Rename file:", file.name);
-        if (!name) return;
+        const name = await askPrompt({
+          title: "Rename file",
+          label: "File name",
+          initialValue: file.name,
+          confirmText: "Rename",
+          selectStem: true,
+        });
+        if (!name || name === file.name) return;
         const res = await apiFetch("/api/files", { method: "PATCH", body: JSON.stringify({ id: file.id, action: "rename", name }) });
         if (!res.success) { showError(res.error ?? "Failed to rename"); return; }
       } else {
@@ -359,11 +383,16 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     } catch {
       showError("Connection failed");
     }
-  }, [trash, queryClient, showError]);
+  }, [trash, queryClient, showError, askPrompt, askConfirm]);
 
   // ── Folder actions ──
   async function createFolder() {
-    const name = prompt("Folder name:");
+    const name = await askPrompt({
+      title: "New folder",
+      label: "Folder name",
+      placeholder: "Untitled folder",
+      confirmText: "Create",
+    });
     if (!name) return;
     try {
       const res = await apiFetch("/api/folders", { method: "POST", body: JSON.stringify({ name, parentId: folderId }) });
@@ -377,12 +406,23 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   async function folderAction(action: "rename" | "delete", folder: FolderRecord) {
     try {
       if (action === "rename") {
-        const name = prompt("New folder name:", folder.name);
-        if (!name) return;
+        const name = await askPrompt({
+          title: "Rename folder",
+          label: "Folder name",
+          initialValue: folder.name,
+          confirmText: "Rename",
+        });
+        if (!name || name === folder.name) return;
         const res = await apiFetch("/api/folders", { method: "PATCH", body: JSON.stringify({ id: folder.id, action: "rename", name }) });
         if (!res.success) { showError(res.error ?? "Failed to rename"); return; }
       } else if (action === "delete") {
-        if (!confirm(`Delete "${folder.name}" and all its contents?`)) return;
+        const ok = await askConfirm({
+          title: "Delete folder?",
+          message: `"${folder.name}" and everything inside it will be moved to the recycle bin.`,
+          confirmText: "Delete folder",
+          danger: true,
+        });
+        if (!ok) return;
         const res = await apiFetch("/api/folders", { method: "PATCH", body: JSON.stringify({ id: folder.id, action: "delete" }) });
         if (!res.success) { showError(res.error ?? "Failed to delete"); return; }
       }
@@ -605,7 +645,13 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   }
 
   async function batchDelete() {
-    if (!confirm(`Delete ${selectedIds.size} file${selectedIds.size > 1 ? "s" : ""}?`)) return;
+    const ok = await askConfirm({
+      title: `Delete ${selectedIds.size} file${selectedIds.size > 1 ? "s" : ""}?`,
+      message: "They'll be moved to the recycle bin — you can restore them later.",
+      confirmText: "Move to trash",
+      danger: true,
+    });
+    if (!ok) return;
     const ids = Array.from(selectedIds);
     const res = await apiFetch("/api/files/batch", {
       method: "PATCH",
@@ -615,6 +661,32 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     setSelectedIds(new Set());
     queryClient.invalidateQueries({ queryKey: ["files"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  }
+
+  // Move one or many files into a destination folder (null = root).
+  async function executeMove(ids: string[], destinationFolderId: string | null) {
+    setMoveIds(null);
+    if (ids.length === 0) return;
+    try {
+      if (ids.length === 1) {
+        const res = await apiFetch("/api/files", {
+          method: "PATCH",
+          body: JSON.stringify({ id: ids[0], action: "move", folderId: destinationFolderId }),
+        });
+        if (!res.success) { showError(res.error ?? "Failed to move"); return; }
+      } else {
+        const res = await apiFetch("/api/files/batch", {
+          method: "PATCH",
+          body: JSON.stringify({ ids, action: "move", folderId: destinationFolderId }),
+        });
+        if (!res.success) { showError(res.error ?? "Failed to move files"); return; }
+      }
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["files"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    } catch {
+      showError("Connection failed");
+    }
   }
 
   async function batchDownload() {
@@ -678,6 +750,71 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
 
   const isLoading = filesQuery.isPending && !filesQuery.data;
 
+  // ── Keyboard shortcuts (power-user parity with Drive/Dropbox) ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+
+      // "/" focuses search from anywhere (unless already typing).
+      if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      if (typing) return;
+
+      // Esc clears the current selection.
+      if (e.key === "Escape" && selectedIds.size > 0) {
+        e.preventDefault();
+        setSelectedIds(new Set());
+        return;
+      }
+
+      // Ctrl/Cmd+A selects everything currently shown.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+        if (filteredFiles.length === 0) return;
+        e.preventDefault();
+        setSelectedIds(new Set(filteredFiles.map((f) => f.id)));
+        return;
+      }
+
+      // Plain g / l toggle grid / list.
+      if (e.key === "g" && !e.ctrlKey && !e.metaKey) { setView("grid"); return; }
+      if (e.key === "l" && !e.ctrlKey && !e.metaKey) { setView("list"); return; }
+
+      // The rest act on the current selection.
+      if (selectedIds.size === 0) return;
+      const selected = filteredFiles.filter((f) => selectedIds.has(f.id));
+
+      // Delete / Backspace → trash selection.
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        void batchDelete();
+        return;
+      }
+      // F2 renames a single selected file.
+      if (e.key === "F2" && selected.length === 1) {
+        e.preventDefault();
+        void handleFileAction("rename", selected[0]);
+        return;
+      }
+      // m moves the selection.
+      if (e.key === "m" && !trash) {
+        e.preventDefault();
+        setMoveIds(Array.from(selectedIds));
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, filteredFiles, trash]);
+
   useEffect(() => {
     if (filesQuery.isError) {
       showError(filesQuery.error instanceof Error ? filesQuery.error.message : "Failed to load files");
@@ -721,6 +858,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
         <div className="relative flex-1 min-w-[160px] sm:min-w-[200px] max-w-md w-full sm:w-auto order-1 sm:order-none">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             placeholder="Search files..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -886,6 +1024,12 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
               <Download className="h-3.5 w-3.5" />
               Download
             </Button>
+            {!trash && (
+              <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setMoveIds(Array.from(selectedIds))}>
+                <Move className="h-3.5 w-3.5" />
+                Move
+              </Button>
+            )}
             <Button variant="secondary" size="sm" className="gap-1.5" onClick={batchFavorite}>
               <Star className="h-3.5 w-3.5" />
               Favorite
@@ -970,6 +1114,17 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
           setEncryptUploads(true);
         }}
       />
+
+      {moveIds && (
+        <MoveToFolderDialog
+          count={moveIds.length}
+          disabledFolderIds={folderId ? [folderId] : []}
+          onCancel={() => setMoveIds(null)}
+          onConfirm={(dest) => executeMove(moveIds, dest)}
+        />
+      )}
+
+      {dialogs}
     </div>
 
     {showUploadPanel && uploadQueue && (

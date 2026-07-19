@@ -1,6 +1,6 @@
-import { eq, and, isNull, gt } from "drizzle-orm";
+import { eq, and, isNull, gt, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { oauthAccessTokens, users } from "@/lib/db/schema";
+import { oauthAccessTokens, oauthClients, users } from "@/lib/db/schema";
 import {
   ACCESS_TOKEN_TTL_SEC,
   generateOpaqueToken,
@@ -8,7 +8,6 @@ import {
   OAUTH_ACCESS_PREFIX,
   OAUTH_REFRESH_PREFIX,
   REFRESH_TOKEN_TTL_SEC,
-  verifySecret,
   parseScopes,
   type OAuthScope,
 } from "@/lib/oauth/constants";
@@ -130,4 +129,87 @@ export async function authenticateOAuthAccessToken(
 
 export function oauthScopesInclude(scopeString: string, required: OAuthScope): boolean {
   return keyHasScope(parseScopes(scopeString), required);
+}
+
+export type ConnectedApp = {
+  clientId: string;
+  clientName: string | null;
+  scopes: string[];
+  activeTokens: number;
+  firstConnectedAt: string;
+  lastConnectedAt: string;
+  expiresAt: string;
+};
+
+/**
+ * Apps the user has authorized over OAuth — one row per client, aggregated from
+ * that user's non-revoked, non-expired access tokens. This powers the
+ * "Connected apps" list + Revoke on the Connection page.
+ */
+export async function listConnectedApps(userId: string): Promise<ConnectedApp[]> {
+  const now = new Date();
+  const rows = await db
+    .select({
+      clientId: oauthAccessTokens.clientId,
+      scope: oauthAccessTokens.scope,
+      createdAt: oauthAccessTokens.createdAt,
+      expiresAt: oauthAccessTokens.expiresAt,
+      clientName: oauthClients.clientName,
+    })
+    .from(oauthAccessTokens)
+    .leftJoin(oauthClients, eq(oauthClients.clientId, oauthAccessTokens.clientId))
+    .where(
+      and(
+        eq(oauthAccessTokens.userId, userId),
+        isNull(oauthAccessTokens.revokedAt),
+        gt(oauthAccessTokens.expiresAt, now)
+      )
+    )
+    .orderBy(desc(oauthAccessTokens.createdAt));
+
+  const byClient = new Map<string, ConnectedApp>();
+  for (const row of rows) {
+    const existing = byClient.get(row.clientId);
+    const scopes = parseScopes(row.scope) as string[];
+    const created = row.createdAt.toISOString();
+    const expires = row.expiresAt.toISOString();
+    if (!existing) {
+      byClient.set(row.clientId, {
+        clientId: row.clientId,
+        clientName: row.clientName ?? null,
+        scopes,
+        activeTokens: 1,
+        firstConnectedAt: created,
+        lastConnectedAt: created,
+        expiresAt: expires,
+      });
+    } else {
+      existing.activeTokens += 1;
+      // rows are newest-first, so first seen = lastConnectedAt; keep earliest as first
+      existing.firstConnectedAt = created;
+      existing.scopes = Array.from(new Set([...existing.scopes, ...scopes]));
+      if (expires > existing.expiresAt) existing.expiresAt = expires;
+    }
+  }
+
+  return [...byClient.values()];
+}
+
+/**
+ * Revoke every active token this user holds for a given client. Returns the
+ * number of tokens revoked (0 if the user had no live tokens for that client).
+ */
+export async function revokeConnectedApp(userId: string, clientId: string): Promise<number> {
+  const revoked = await db
+    .update(oauthAccessTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(oauthAccessTokens.userId, userId),
+        eq(oauthAccessTokens.clientId, clientId),
+        isNull(oauthAccessTokens.revokedAt)
+      )
+    )
+    .returning({ id: oauthAccessTokens.id });
+  return revoked.length;
 }

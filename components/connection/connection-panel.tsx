@@ -2,16 +2,18 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Crown, KeyRound, Link2, Plug, ShieldAlert } from "lucide-react";
+import { Boxes, Crown, KeyRound, Link2, Plug, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getIntegrationsBaseUrl } from "@/lib/integrations/catalog";
 import { ConnectionEndpointsPanel } from "@/components/integrations/connection-endpoints-panel";
 import { McpSetupSection } from "@/components/settings/mcp-setup-section";
 import { MasterApiKeysSection } from "@/components/admin/master-api-keys-section";
 import { ApiKeysSection } from "@/components/settings/api-keys-section";
+import { ConnectedAppsSection } from "@/components/connection/connected-apps-section";
 
 const SECTIONS = [
   { id: "endpoints", label: "Endpoints", icon: Link2, description: "MCP URL & OAuth discovery" },
+  { id: "apps", label: "Connected apps", icon: Boxes, description: "Review & revoke access" },
   { id: "keys", label: "API keys", icon: KeyRound, description: "Programmatic access tokens" },
   { id: "mcp", label: "MCP setup", icon: Plug, description: "Local stdio & remote OAuth" },
 ] as const;
@@ -54,7 +56,7 @@ export function ConnectionPanel({ tier, initialSection = "endpoints" }: Connecti
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {sections.map((item) => {
           const active = section === item.id;
           const Icon = item.icon;
@@ -103,6 +105,7 @@ export function ConnectionPanel({ tier, initialSection = "endpoints" }: Connecti
         transition={{ duration: 0.2 }}
       >
         {section === "endpoints" && <ConnectionEndpointsPanel baseUrl={baseUrl} />}
+        {section === "apps" && <ConnectedAppsSection />}
         {section === "keys" &&
           (tier === "master" ? (
             <MasterApiKeysSection onKeyCreated={(raw) => setKeyPlaceholder(raw)} />

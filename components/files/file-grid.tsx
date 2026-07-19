@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import {
   FileText, Image, Film, Music, FileArchive, File,
   Star, Trash2, Copy, RotateCcw, Pencil, MoreHorizontal, Download,
-  Play, Share2, Check, Lock,
+  Play, Share2, Check, Lock, FolderInput,
   ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { cn, formatBytes, formatDate, getMimeCategory } from "@/lib/utils";
@@ -17,6 +17,33 @@ import { Spinner } from "@/components/system/spinner";
 
 const ROW_HEIGHT = 56;
 const OVERSCAN = 8;
+
+// ─── Right-click context menu hook ────────────────────────────────────────────
+// Places a zero-size fixed anchor at the cursor so FloatingActionMenu can position
+// its popover exactly where the user right-clicked.
+function useContextMenu() {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPos({ x: e.clientX, y: e.clientY });
+    setOpen(true);
+  };
+
+  const anchorStyle: React.CSSProperties = {
+    position: "fixed",
+    left: pos.x,
+    top: pos.y,
+    width: 0,
+    height: 0,
+    pointerEvents: "none",
+  };
+
+  return { anchorRef, open, close: () => setOpen(false), onContextMenu, anchorStyle };
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -127,6 +154,7 @@ function buildFileMenuItems(
     { id: "download", label: "Download", icon: Download, onClick: () => onAction("download", file) },
     { id: "share", label: "Share", icon: Share2, onClick: () => onAction("share", file) },
     { id: "rename", label: "Rename", icon: Pencil, onClick: () => onAction("rename", file) },
+    { id: "move", label: "Move to…", icon: FolderInput, onClick: () => onAction("move", file) },
     { id: "favorite", label: file.isFavorite ? "Unfavorite" : "Favorite", icon: Star, onClick: () => onAction("favorite", file) },
     { id: "duplicate", label: "Duplicate", icon: Copy, onClick: () => onAction("duplicate", file) },
     { id: "delete", label: "Move to trash", icon: Trash2, danger: true, onClick: () => onAction("delete", file) },
@@ -432,6 +460,7 @@ const GridCard = memo(function GridCard({
   onFileClick: (f: FileRecord) => void; onSelect: (id: string) => void;
 }) {
   const [hoverInfo, setHoverInfo] = useState(false);
+  const ctxMenu = useContextMenu();
   const cat = getMimeCategory(file.mimeType);
   const isVideo = cat === "video";
   const isAudio = cat === "audio";
@@ -449,6 +478,7 @@ const GridCard = memo(function GridCard({
           : "border-border/60 hover:shadow-lg hover:border-accent/30 hover:shadow-accent/5"
       )}
       onClick={() => onFileClick(file)}
+      onContextMenu={ctxMenu.onContextMenu}
       onMouseEnter={() => setHoverInfo(true)}
       onMouseLeave={() => setHoverInfo(false)}
     >
@@ -506,6 +536,16 @@ const GridCard = memo(function GridCard({
 
       {/* Hover info popover */}
       {hoverInfo && <HoverInfoCard file={file} />}
+
+      {/* Right-click context menu */}
+      <span ref={ctxMenu.anchorRef} style={ctxMenu.anchorStyle} aria-hidden />
+      <FloatingActionMenu
+        open={ctxMenu.open}
+        onClose={ctxMenu.close}
+        anchorRef={ctxMenu.anchorRef}
+        items={buildFileMenuItems(file, trash, onFileAction)}
+        align="start"
+      />
     </motion.div>
   );
 });
@@ -520,6 +560,7 @@ const ListRow = memo(function ListRow({
   onFileClick: (f: FileRecord) => void; onSelect: (id: string, shiftKey?: boolean) => void;
 }) {
   const menu = useFloatingMenu();
+  const ctxMenu = useContextMenu();
   const hasThumb = !!file.thumbnailKey;
   const menuItems = buildFileMenuItems(file, trash, onFileAction);
 
@@ -533,6 +574,7 @@ const ListRow = memo(function ListRow({
           : "hover:bg-accent/[0.03]"
       )}
       onClick={() => onFileClick(file)}
+      onContextMenu={ctxMenu.onContextMenu}
     >
       {/* Checkbox */}
       <button
@@ -606,6 +648,16 @@ const ListRow = memo(function ListRow({
           align="end"
         />
       </div>
+
+      {/* Right-click context menu */}
+      <span ref={ctxMenu.anchorRef} style={ctxMenu.anchorStyle} aria-hidden />
+      <FloatingActionMenu
+        open={ctxMenu.open}
+        onClose={ctxMenu.close}
+        anchorRef={ctxMenu.anchorRef}
+        items={menuItems}
+        align="start"
+      />
     </div>
   );
 });

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { files } from "@/lib/db/schema";
+import { files, folders } from "@/lib/db/schema";
 import { getClientIp, requireAuth } from "@/lib/auth/session";
 import { requireAuthOrApiKey } from "@/lib/auth/api-key";
 import { getEffectiveUserId, canAccessUserResource } from "@/lib/auth/permissions";
@@ -16,7 +16,9 @@ import { dispatchWebhookEvent } from "@/lib/webhooks/dispatch";
 
 const patchSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(500),
-  action: z.enum(["delete", "restore", "favorite"]),
+  action: z.enum(["delete", "restore", "favorite", "move"]),
+  // Destination folder for action="move" (null/omitted = move to root).
+  folderId: z.string().uuid().nullable().optional(),
 });
 
 export async function PATCH(request: NextRequest) {
@@ -75,6 +77,24 @@ export async function PATCH(request: NextRequest) {
         await db
           .update(files)
           .set({ isFavorite: !allFavorite, updatedAt: now })
+          .where(inArray(files.id, ids));
+        break;
+      }
+      case "move": {
+        // Validate the destination folder belongs to the same owner (root = null is always ok).
+        if (body.folderId) {
+          const [dest] = await db
+            .select({ userId: folders.userId })
+            .from(folders)
+            .where(eq(folders.id, body.folderId))
+            .limit(1);
+          if (!dest || !ownerIds.every((o) => o === dest.userId)) {
+            return apiError("Destination folder not found", 404);
+          }
+        }
+        await db
+          .update(files)
+          .set({ folderId: body.folderId ?? null, updatedAt: now })
           .where(inArray(files.id, ids));
         break;
       }

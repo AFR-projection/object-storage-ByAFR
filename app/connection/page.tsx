@@ -45,7 +45,10 @@ function ConnectionPageInner() {
   const params = useSearchParams();
   const sectionParam = params.get("section");
   const initialSection: ConnectionSectionId =
-    sectionParam === "keys" || sectionParam === "mcp" || sectionParam === "endpoints"
+    sectionParam === "keys" ||
+    sectionParam === "mcp" ||
+    sectionParam === "endpoints" ||
+    sectionParam === "apps"
       ? sectionParam
       : "endpoints";
 
