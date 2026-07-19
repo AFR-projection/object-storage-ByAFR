@@ -99,7 +99,12 @@ function buildAiPrompt(baseUrl: string, apiKey: string): string {
   ].join("\n");
 }
 
-export function ApiKeysSection() {
+type ApiKeysSectionProps = {
+  /** Hide MCP block when rendered inside the Connection panel (MCP has its own tab). */
+  hideMcpSetup?: boolean;
+};
+
+export function ApiKeysSection({ hideMcpSetup = false }: ApiKeysSectionProps) {
   const [tab, setTab] = useState<"create" | "guide" | "keys">("create");
   const [mode, setMode] = useState<"preset" | "custom">("preset");
   const [preset, setPreset] = useState<ApiKeyPreset>("ai_agent");
@@ -224,11 +229,11 @@ export function ApiKeysSection() {
       {tab === "create" && (
         <div className="space-y-4">
           <div className="rounded-lg border border-border/60 bg-surface-hover/30 p-3 text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">Plug & play — platform apapun</p>
+            <p className="font-medium text-foreground">Plug & play — any platform</p>
             <p className="mt-1">
-              Buat key → copy config → paste ke client kamu (MCP / HTTP / OpenAPI). Auth standar{" "}
-              <code className="text-accent">Authorization: Bearer sk_…</code> — semua platform yang support Bearer
-              bisa connect.
+              Create a key → copy config → paste into your client (MCP / HTTP / OpenAPI). Standard auth:{" "}
+              <code className="text-accent">Authorization: Bearer sk_…</code> — any platform that supports Bearer
+              can connect.
             </p>
           </div>
 
@@ -455,11 +460,13 @@ export function ApiKeysSection() {
             </Button>
           </div>
 
-          <McpSetupSection
-            apiUrl={baseUrl}
-            keyPlaceholder={createdRaw ?? "YOUR_SK_KEY"}
-            variant="user"
-          />
+          {!hideMcpSetup && (
+            <McpSetupSection
+              apiUrl={baseUrl}
+              keyPlaceholder={createdRaw ?? "YOUR_SK_KEY"}
+              variant="user"
+            />
+          )}
 
           <div className="rounded-lg border border-border/40 p-3 text-xs text-muted-foreground">
             <p className="flex items-center gap-1.5 font-medium text-foreground">

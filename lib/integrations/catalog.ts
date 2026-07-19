@@ -7,7 +7,6 @@ export type ConnectionMethod = {
   name: string;
   subtitle: string;
   description: string;
-  /** Protocol/standard requirements — any platform that meets these can connect */
   compatibility: string[];
   docsPath?: string;
   settingsPath?: string;
@@ -20,12 +19,12 @@ export const CONNECTION_METHODS: ConnectionMethod[] = [
     name: "REST API",
     subtitle: "API Keys (sk_ / skm_)",
     description:
-      "Standar HTTP + Bearer token. Semua platform, bahasa, bot, atau automation yang bisa kirim request HTTPS bisa connect — tanpa plugin khusus.",
+      "Standard HTTP + Bearer token. Any platform, language, bot, or automation that can send HTTPS requests can connect.",
     compatibility: [
       "HTTPS + JSON REST",
       "Authorization: Bearer sk_* / skm_*",
-      "Semua bahasa & runtime (Node, Python, Go, PHP, …)",
-      "Semua automation yang punya HTTP node",
+      "All languages & runtimes",
+      "Any automation with an HTTP node",
     ],
     docsPath: "/api/v1/docs",
     settingsPath: "/settings",
@@ -36,10 +35,10 @@ export const CONNECTION_METHODS: ConnectionMethod[] = [
     name: "MCP",
     subtitle: "Model Context Protocol",
     description:
-      "Local stdio (npm run mcp + API key) atau remote HTTP (/api/mcp + OAuth 2.1). Semua MCP client yang support transport + auth tersebut.",
+      "Local stdio (npm run mcp + API key) or remote HTTP (/api/mcp + OAuth 2.1). Works with any MCP client that supports the transport and auth model.",
     compatibility: [
       "MCP stdio + API key (local)",
-      "MCP Streamable HTTP + OAuth 2.1 PKCE (remote connector)",
+      "MCP Streamable HTTP + OAuth 2.1 PKCE (remote)",
       "Discovery: /.well-known/oauth-authorization-server",
     ],
     tier: "both",
@@ -49,11 +48,11 @@ export const CONNECTION_METHODS: ConnectionMethod[] = [
     name: "Webhooks",
     subtitle: "Event-driven outbound",
     description:
-      "Platform kamu kirim event (upload, delete, share) ke URL yang kamu daftarkan. Semua sistem yang bisa terima HTTP POST + verifikasi signature bisa connect.",
+      "Your platform pushes events (upload, delete, share) to URLs you configure. Any system that accepts signed HTTP POST can connect.",
     compatibility: [
       "HTTP POST callback URL",
       "JSON payload + HMAC signature",
-      "Semua workflow engine & server custom",
+      "Workflow engines & custom servers",
     ],
     settingsPath: "/settings",
     tier: "user",
@@ -63,11 +62,11 @@ export const CONNECTION_METHODS: ConnectionMethod[] = [
     name: "OpenAPI & Plugins",
     subtitle: "Universal connector spec",
     description:
-      "Spesifikasi OpenAPI 3.0 standar industri. Semua tool yang bisa import OpenAPI + Bearer auth otomatis bisa connect — tanpa daftar platform tertentu.",
+      "Industry-standard OpenAPI 3.0. Any tool that imports OpenAPI with Bearer auth can connect automatically.",
     compatibility: [
       "OpenAPI 3.0 import",
       "Bearer authentication scheme",
-      "Semua API client, low-code, AI action builder",
+      "API clients, low-code, AI action builders",
     ],
     docsPath: "/api/v1/openapi",
     tier: "both",
@@ -89,17 +88,13 @@ export function methodsForTier(tier: "user" | "master"): ConnectionMethod[] {
     if (tier === "master" && m.id === "webhooks") {
       return {
         ...m,
-        name: "Webhooks",
         description:
-          "Master pakai API/MCP untuk kontrol inbound. Webhook outbound dikonfigurasi per akun user di Settings mereka.",
+          "Master accounts use API/MCP for inbound control. Outbound webhooks are configured per user in Settings.",
         settingsPath: undefined,
       };
     }
-    if (tier === "master" && m.id === "api") {
-      return { ...m, settingsPath: "/admin/api-keys" };
-    }
-    if (tier === "user" && m.id === "api") {
-      return { ...m, settingsPath: "/settings" };
+    if (m.id === "api") {
+      return { ...m, settingsPath: "/connection?section=keys" };
     }
     return m;
   });

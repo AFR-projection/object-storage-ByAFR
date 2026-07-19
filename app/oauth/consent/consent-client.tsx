@@ -63,7 +63,7 @@ export default function OAuthConsentClient() {
           <h1 className="text-lg font-semibold">Authorize connection</h1>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          External app (MCP client) minta akses ke Storage ByAFR pakai akun login kamu.
+          An external MCP client is requesting access to Storage ByAFR using your signed-in account.
         </p>
         <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-xs space-y-1">
           <p>
@@ -88,8 +88,7 @@ export default function OAuthConsentClient() {
           </Button>
         </div>
         <p className="text-[10px] text-muted-foreground">
-          Setelah Allow, kamu di-redirect kembali ke app connector. Token OAuth dipakai untuk MCP — bukan API key
-          sk_.
+          After allowing access, you will be redirected back to the connector app. OAuth tokens are used for MCP — not sk_ API keys.
         </p>
       </Card>
     </div>

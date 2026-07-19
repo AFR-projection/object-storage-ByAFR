@@ -1,13 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowRight,
-  Key,
-  Plug,
-  Webhook,
-  Boxes,
-} from "lucide-react";
+import { ArrowRight, Key, Plug, Webhook, Boxes } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -46,16 +40,15 @@ export function ConnectionHub({ tier, apiKeyHint = tier === "master" ? "skm_" : 
     <div className="space-y-8">
       <ConnectionEndpointsPanel baseUrl={baseUrl} />
 
-      <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 sm:p-5 text-sm space-y-2">
-        <p className="font-medium">Universal — semua platform yang support protokolnya</p>
-        <p className="text-muted-foreground text-xs leading-relaxed">
-          REST + Bearer, MCP + OAuth, OpenAPI, atau Webhook POST — langsung connect. Satu akun = satu key (
+      <div className="rounded-2xl border border-border/50 bg-muted/15 p-4 sm:p-5 text-sm">
+        <p className="font-medium">Protocol-agnostic connections</p>
+        <p className="text-muted-foreground text-xs leading-relaxed mt-1">
+          Any platform supporting REST + Bearer, MCP + OAuth, OpenAPI, or signed webhooks can connect.
           {tier === "master" ? (
-            <code className="text-amber-400">skm_</code>
+            <> Master keys use <code className="text-amber-400">skm_</code>.</>
           ) : (
-            <code className="text-sky-400">sk_</code>
+            <> User keys use <code className="text-sky-400">sk_</code>.</>
           )}
-          ) kecuali MCP remote yang pakai login OAuth browser.
         </p>
       </div>
 
@@ -78,9 +71,7 @@ export function ConnectionHub({ tier, apiKeyHint = tier === "master" ? "skm_" : 
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground leading-relaxed">{method.description}</p>
-              <p className="mt-2 text-[10px] font-medium text-muted-foreground/80">
-                Platform compatible jika support:
-              </p>
+              <p className="mt-2 text-[10px] font-medium text-muted-foreground/80">Compatible when supporting:</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {method.compatibility.map((tag) => (
                   <span
@@ -112,7 +103,7 @@ export function ConnectionHub({ tier, apiKeyHint = tier === "master" ? "skm_" : 
       </div>
 
       <div id="mcp-setup">
-        <h2 className="mb-3 text-lg font-semibold">MCP — local & remote setup</h2>
+        <h2 className="mb-3 text-lg font-semibold">MCP setup</h2>
         <McpSetupSection
           apiUrl={baseUrl}
           keyPlaceholder={`YOUR_${apiKeyHint.toUpperCase()}KEY`}

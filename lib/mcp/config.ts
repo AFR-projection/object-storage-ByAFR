@@ -39,40 +39,33 @@ export function generateRemoteMcpInstructions(options: { apiUrl: string }): stri
   return [
     "Remote MCP Connector (OAuth 2.1)",
     "",
-    `✅ MCP Server URL: ${mcpUrl}`,
+    `MCP Server URL: ${mcpUrl}`,
     "",
-    "❌ JANGAN pakai URL ini untuk MCP connector:",
-    `   ${base}/api/v1/connect  (manifest — bukan MCP server)`,
-    `   ${base}/api/v1/openapi  (OpenAPI spec — untuk Custom GPT Actions, bukan MCP)`,
+    "Do NOT use these URLs in the MCP connector form:",
+    `  ${base}/api/v1/connect  (discovery manifest)`,
+    `  ${base}/api/v1/openapi  (OpenAPI spec for Actions, not MCP)`,
     "",
-    "Setup MCP connector (semua client yang support MCP + OAuth):",
-    "1. Paste MCP Server URL di atas",
-    "2. Client auto-fetch OAuth dari /.well-known/oauth-authorization-server",
-    "3. Login browser ke akun Storage ByAFR → Allow access",
-    "4. Test tool storage_verify",
-    "",
-    "OAuth discovery:",
-    `${base}/.well-known/oauth-authorization-server`,
-    `${base}/.well-known/oauth-protected-resource/api/mcp`,
+    "Setup:",
+    "1. Paste the MCP Server URL above",
+    "2. Client auto-discovers OAuth via /.well-known/oauth-authorization-server",
+    "3. Sign in with your Storage ByAFR account and click Allow access",
+    "4. Test with the storage_verify tool",
   ].join("\n");
 }
 
-/** @deprecated use generateRemoteMcpInstructions */
-export const generateChatGptMcpInstructions = generateRemoteMcpInstructions;
-
 export const MCP_LOCAL_SETUP_STEPS = [
-  "Buat API key (sk_ user / skm_ master)",
-  "Copy config MCP di bawah → paste ke MCP client kamu (settings MCP / mcpServers)",
-  "Ganti placeholder key dengan key asli (jangan commit ke git)",
-  "Restart MCP client — AI agent bisa pakai storage tools otomatis",
+  "Create an API key (sk_ for users, skm_ for master)",
+  "Copy the MCP config below into your MCP client settings",
+  "Replace the key placeholder with your real key (never commit to git)",
+  "Restart the MCP client — storage tools become available automatically",
 ] as const;
 
 export const MCP_REMOTE_SETUP_STEPS = [
-  "Buka MCP connector di client kamu (Developer Mode / Connectors)",
-  "Server URL: https://…/api/mcp — bukan /connect atau /openapi",
-  "OAuth auto-detect — login browser ke akun Storage ByAFR",
-  "Klik Allow access di halaman consent",
-  "Test dengan tool storage_verify",
+  "Open your MCP client connector settings (Developer Mode / Connectors)",
+  "Server URL: https://your-domain/api/mcp — not /connect or /openapi",
+  "OAuth is detected automatically — sign in via browser",
+  "Click Allow access on the consent screen",
+  "Verify with the storage_verify tool",
 ] as const;
 
 /** @deprecated use MCP_LOCAL_SETUP_STEPS */

@@ -20,7 +20,7 @@ import {
   X,
   Loader2,
   Settings,
-  Plug,
+  Link2,
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { cn, formatBytes } from "@/lib/utils";
@@ -49,6 +49,7 @@ const navItems = [
   { href: "/favorites", label: "Favorites", icon: Star },
   { href: "/shares", label: "Shared", icon: Share2 },
   { href: "/recycle-bin", label: "Recycle Bin", icon: Trash2 },
+  { href: "/connection", label: "Connection", icon: Link2 },
 ];
 
 const STORAGE_KEY = "sidebar_collapsed";
@@ -190,31 +191,6 @@ function SidebarInner({
         })}
 
         {user.role !== "master" && (
-          <>
-          <motion.div
-            initial={!isMobile ? { opacity: 0, x: -12 } : undefined}
-            animate={!isMobile ? { opacity: 1, x: 0 } : undefined}
-            transition={!isMobile ? { delay: navItems.length * 0.04, duration: 0.25 } : undefined}
-          >
-            <Link
-              href="/settings/integrations"
-              onClick={handleNav}
-              className={cn(
-                "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[40px]",
-                pathname.startsWith("/settings/integrations") ? "text-white" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {pathname.startsWith("/settings/integrations") && (
-                <motion.div
-                  layoutId={`nav-active-integrations${isMobile ? "-mobile" : ""}`}
-                  className="absolute inset-0 rounded-lg bg-accent/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                />
-              )}
-              <Plug className={cn("relative z-10 h-4 w-4 shrink-0", pathname.startsWith("/settings/integrations") && "text-accent")} />
-              {showLabels && <span className="relative z-10">Integrations</span>}
-            </Link>
-          </motion.div>
           <motion.div
             initial={!isMobile ? { opacity: 0, x: -12 } : undefined}
             animate={!isMobile ? { opacity: 1, x: 0 } : undefined}
@@ -239,7 +215,6 @@ function SidebarInner({
               {showLabels && <span className="relative z-10">Settings</span>}
             </Link>
           </motion.div>
-          </>
         )}
 
         {user.role === "master" && (

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function SettingsIntegrationsRedirect() {
+export default function AdminConnectionRedirect() {
   redirect("/connection");
 }

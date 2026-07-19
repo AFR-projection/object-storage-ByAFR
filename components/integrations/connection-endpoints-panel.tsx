@@ -43,28 +43,28 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
 
   return (
     <div className="space-y-4">
-      {/* Hero — MCP URL */}
-      <Card className="relative overflow-hidden border-violet-500/40 bg-gradient-to-br from-violet-600/20 via-violet-500/10 to-background p-5 sm:p-6">
-        <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-violet-500/10 blur-2xl" />
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2 min-w-0">
+      <Card className="relative overflow-hidden border-violet-500/35 bg-gradient-to-br from-violet-600/15 via-violet-500/5 to-transparent p-5 sm:p-6">
+        <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" />
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2 min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-violet-400" />
-              <p className="text-xs font-semibold uppercase tracking-wider text-violet-300">
-                URL utama — MCP Connector
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-violet-300">
+                Primary MCP connector URL
               </p>
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Paste <strong className="text-foreground">hanya URL ini</strong> di form MCP connector / plugin.
-              OAuth login otomatis — jangan pakai /connect atau /openapi.
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
+              Paste this URL into your MCP connector or plugin form. OAuth login runs automatically.
+              Do not use <code className="text-foreground/80">/connect</code> or{" "}
+              <code className="text-foreground/80">/openapi</code> in that field.
             </p>
-            <code className="block break-all rounded-lg bg-black/40 px-3 py-2.5 text-sm font-mono text-emerald-300/95 ring-1 ring-violet-500/30">
+            <code className="block break-all rounded-xl bg-black/35 px-4 py-3 text-sm font-mono text-emerald-300/95 ring-1 ring-violet-500/25">
               {mcpUrl}
             </code>
           </div>
           <Button
             size="sm"
-            className="shrink-0 bg-violet-600 hover:bg-violet-500 text-white"
+            className="shrink-0 bg-violet-600 hover:bg-violet-500 text-white shadow-lg shadow-violet-500/20"
             onClick={() => copy(mcpUrl, "mcp-primary")}
           >
             {copied === "mcp-primary" ? (
@@ -76,24 +76,23 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
           </Button>
         </div>
         <div className="relative mt-4 flex flex-wrap gap-2 text-[10px]">
-          <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-violet-200">
+          <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-violet-200">
             <Shield className="h-3 w-3" /> OAuth 2.1 + PKCE
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-background/40 px-2 py-0.5 text-muted-foreground">
+          <span className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-background/40 px-2.5 py-1 text-muted-foreground">
             <Globe className="h-3 w-3" /> Streamable HTTP
           </span>
         </div>
       </Card>
 
-      {/* Endpoint table */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="border-b border-border/60 bg-muted/20 px-4 py-3 sm:px-5">
+      <Card className="overflow-hidden border-border/50">
+        <div className="border-b border-border/50 bg-muted/15 px-4 py-3.5 sm:px-5">
           <div className="flex items-center gap-2">
             <Link2 className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-semibold">Semua endpoint koneksi</p>
+            <p className="text-sm font-semibold">All connection endpoints</p>
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            Setiap baris = fungsi berbeda. Jangan campur URL MCP dengan OpenAPI/manifest.
+            Each row serves a different protocol. Use the correct URL for each integration type.
           </p>
         </div>
         <div className="divide-y divide-border/40">
@@ -117,17 +116,17 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
                         BADGE_STYLES[badge]
                       )}
                     >
-                      {ep.primary ? "pakai ini" : badge.replace("-", " ")}
+                      {ep.primary ? "use this" : badge.replace("-", " ")}
                     </span>
                     {ep.avoidForMcp && (
-                      <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[9px] text-red-300">
-                        bukan MCP URL
+                      <span className="rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[9px] text-red-300">
+                        not MCP URL
                       </span>
                     )}
                   </div>
                   <code className="block break-all text-[11px] font-mono text-muted-foreground">{url}</code>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    <span className="text-foreground/80">Auth:</span> {ep.auth}
+                    <span className="text-foreground/75">Auth:</span> {ep.auth}
                     <span className="mx-1.5 text-border">·</span>
                     {ep.useFor}
                   </p>
@@ -151,12 +150,11 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
         </div>
       </Card>
 
-      {/* Wrong URLs warning */}
-      <Card className="border-red-500/25 bg-red-500/[0.04] p-4 sm:p-5">
-        <div className="flex items-start gap-2">
+      <Card className="border-red-500/20 bg-red-500/[0.03] p-4 sm:p-5">
+        <div className="flex items-start gap-2.5">
           <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
           <div className="space-y-2 min-w-0">
-            <p className="text-sm font-medium text-red-200">Jangan paste ke form MCP connector</p>
+            <p className="text-sm font-medium text-red-200">Do not paste these into the MCP connector form</p>
             <ul className="space-y-1.5 text-[11px] text-muted-foreground">
               {WRONG_MCP_URLS.map((item) => (
                 <li key={item.path} className="flex flex-wrap gap-x-1">

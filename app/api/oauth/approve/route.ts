@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
     if (!clientCheck.ok) {
       return apiError(
         clientCheck.error === "invalid_redirect_uri"
-          ? "Redirect URI tidak cocok dengan client OAuth"
-          : "OAuth client tidak valid",
+          ? "Redirect URI does not match the OAuth client"
+          : "Invalid OAuth client",
         400
       );
     }

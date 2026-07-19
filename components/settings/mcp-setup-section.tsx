@@ -23,7 +23,7 @@ export function McpSetupSection({
   keyPlaceholder = "YOUR_API_KEY_HERE",
   variant = "user",
 }: McpSetupSectionProps) {
-  const [mode, setMode] = useState<"local" | "remote">("local");
+  const [mode, setMode] = useState<"local" | "remote">("remote");
 
   const projectPath =
     typeof window !== "undefined"
@@ -51,13 +51,23 @@ export function McpSetupSection({
   );
 
   return (
-    <div className="space-y-3 rounded-xl border border-violet-500/30 bg-violet-500/5 p-4">
+    <div className="space-y-3 rounded-xl border border-violet-500/25 bg-violet-500/[0.04] p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Plug className="h-4 w-4 text-violet-400" />
-          <p className="text-sm font-semibold text-violet-300">MCP — connect AI agents</p>
+          <p className="text-sm font-semibold text-violet-200">MCP configuration</p>
         </div>
-        <div className="flex rounded-lg border border-border/60 bg-background/40 p-0.5 text-[10px]">
+        <div className="flex rounded-lg border border-border/50 bg-background/40 p-0.5 text-[10px]">
+          <button
+            type="button"
+            className={cn(
+              "rounded-md px-2.5 py-1 font-medium transition-colors",
+              mode === "remote" ? "bg-violet-500/20 text-violet-200" : "text-muted-foreground"
+            )}
+            onClick={() => setMode("remote")}
+          >
+            Remote (OAuth)
+          </button>
           <button
             type="button"
             className={cn(
@@ -68,25 +78,40 @@ export function McpSetupSection({
           >
             Local (stdio)
           </button>
-          <button
-            type="button"
-            className={cn(
-              "rounded-md px-2.5 py-1 font-medium transition-colors",
-              mode === "remote" ? "bg-violet-500/20 text-violet-200" : "text-muted-foreground"
-            )}
-            onClick={() => setMode("remote")}
-          >
-            Remote (HTTP)
-          </button>
         </div>
       </div>
 
-      {mode === "local" ? (
+      {mode === "remote" ? (
+        <>
+          <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+            <Globe className="h-3.5 w-3.5 shrink-0 mt-0.5 text-violet-400" />
+            Streamable HTTP with OAuth 2.1 — required for MCP connector / plugin forms. No manual API key paste.
+          </p>
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] p-3">
+            <p className="text-[10px] font-medium text-emerald-300/90 mb-1">Correct MCP Server URL</p>
+            <code className="text-[11px] font-mono break-all text-emerald-200/90">{remoteUrl}</code>
+          </div>
+          <ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground">
+            {MCP_REMOTE_SETUP_STEPS.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={() => navigator.clipboard.writeText(remoteInstructions)}
+          >
+            <Copy className="mr-1.5 h-3.5 w-3.5" />
+            Copy setup instructions
+          </Button>
+        </>
+      ) : (
         <>
           <p className="text-xs text-muted-foreground">
             {variant === "master"
-              ? "Semua MCP client dengan stdio transport. Master key (skm_) unlock admin_* tools."
-              : "Semua MCP client yang support stdio — paste config ke settings MCP client kamu."}
+              ? "For MCP clients with stdio transport. Master keys (skm_) unlock admin_* tools."
+              : "For local MCP clients (Cursor, Claude Desktop, etc.) — paste config into mcpServers settings."}
           </p>
           <ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground">
             {MCP_LOCAL_SETUP_STEPS.map((step) => (
@@ -106,48 +131,6 @@ export function McpSetupSection({
             Copy local MCP config
           </Button>
         </>
-      ) : (
-        <>
-          <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-            <Globe className="h-3.5 w-3.5 shrink-0 mt-0.5 text-violet-400" />
-            Streamable HTTP + OAuth 2.1 — untuk semua MCP connector yang wajib OAuth (bukan API key manual).
-          </p>
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-200/90">
-            URL yang benar: <code className="break-all">{remoteUrl}</code>
-            <br />
-            Bukan /api/v1/connect atau /api/v1/openapi
-          </div>
-          <ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground">
-            {MCP_REMOTE_SETUP_STEPS.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-          <div className="rounded-lg bg-black/30 p-3 space-y-2">
-            <p className="text-[10px] text-muted-foreground">Server URL</p>
-            <p className="text-[11px] font-mono text-emerald-300/90 break-all">{remoteUrl}</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-[10px]"
-              onClick={() => navigator.clipboard.writeText(remoteUrl)}
-            >
-              <Copy className="mr-1 h-3 w-3" />
-              Copy MCP URL
-            </Button>
-          </div>
-          <pre className="max-h-40 overflow-auto rounded-lg bg-black/30 p-3 text-[10px] leading-relaxed text-emerald-300/90 whitespace-pre-wrap">
-            {remoteInstructions}
-          </pre>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8"
-            onClick={() => navigator.clipboard.writeText(remoteInstructions)}
-          >
-            <Copy className="mr-1.5 h-3.5 w-3.5" />
-            Copy remote MCP setup
-          </Button>
-        </>
       )}
 
       <p className="text-[10px] text-muted-foreground">
@@ -155,7 +138,7 @@ export function McpSetupSection({
         {variant === "master" ? ", admin_get_stats, admin_list_users, admin_get_settings" : ""}
       </p>
       <p className="text-[10px] text-amber-500/90">
-        Jangan pernah paste API key di chat AI. Key cuma di MCP env / connector form.
+        Never paste API keys in AI chat. Keys belong in MCP env or secure connector settings only.
       </p>
     </div>
   );

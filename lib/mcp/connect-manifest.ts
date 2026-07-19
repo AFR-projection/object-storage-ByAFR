@@ -114,7 +114,7 @@ export function buildConnectManifest(fallbackOrigin?: string): ConnectManifest {
           transport: "stdio",
           auth: "STORAGE_API_KEY env var (sk_* or skm_*)",
           setup: [
-            "Copy MCP config from Integrations page",
+            "Copy MCP config from the Connection page",
             "Paste into your MCP client's server config",
             "Set STORAGE_API_URL and STORAGE_API_KEY",
           ],
