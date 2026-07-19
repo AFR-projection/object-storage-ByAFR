@@ -6,6 +6,7 @@ import {
   generateClientSecret,
   hashSecret,
   isAllowedRedirectUri,
+  LOOPBACK_HOSTS,
 } from "@/lib/oauth/constants";
 
 export type RegisterClientInput = {
@@ -94,25 +95,41 @@ export async function validateOAuthClientRedirect(
   return { ok: false, error: "invalid_redirect_uri" };
 }
 
-/** Exact match, or same allowed host (ChatGPT dynamic /connector/oauth/* paths). */
+/**
+ * Exact-match, with one RFC 8252 exception: loopback redirects (http://127.0.0.1,
+ * http://localhost, http://[::1]) may differ only by port, because native clients
+ * bind an ephemeral port at runtime. Everything else must match byte-for-byte —
+ * no host-only matching (that would allow open redirects within a trusted host).
+ */
 function redirectUriAllowedForClient(registeredUris: string[], redirectUri: string): boolean {
   if (registeredUris.includes(redirectUri)) return true;
 
-  let redirectUrl: URL;
+  let requested: URL;
   try {
-    redirectUrl = new URL(redirectUri);
+    requested = new URL(redirectUri);
   } catch {
     return false;
   }
 
+  const isLoopback =
+    requested.protocol === "http:" &&
+    LOOPBACK_HOSTS.includes(requested.hostname.toLowerCase());
+  if (!isLoopback) return false;
+
+  // Loopback: match on everything except the port.
   return registeredUris.some((registered) => {
-    if (registered === redirectUri) return true;
+    let reg: URL;
     try {
-      const reg = new URL(registered);
-      return reg.hostname === redirectUrl.hostname && isAllowedRedirectUri(registered);
+      reg = new URL(registered);
     } catch {
       return false;
     }
+    return (
+      reg.protocol === "http:" &&
+      LOOPBACK_HOSTS.includes(reg.hostname.toLowerCase()) &&
+      reg.hostname.toLowerCase() === requested.hostname.toLowerCase() &&
+      reg.pathname === requested.pathname
+    );
   });
 }
 

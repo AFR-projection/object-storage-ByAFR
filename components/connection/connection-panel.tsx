@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Crown, KeyRound, Link2, Plug } from "lucide-react";
+import { Crown, KeyRound, Link2, Plug, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getIntegrationsBaseUrl } from "@/lib/integrations/catalog";
 import { ConnectionEndpointsPanel } from "@/components/integrations/connection-endpoints-panel";
@@ -40,6 +40,20 @@ export function ConnectionPanel({ tier, initialSection = "endpoints" }: Connecti
 
   return (
     <div className="space-y-6">
+      {/* Awareness: connecting an external platform grants direct access to your data */}
+      <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/[0.05] px-4 py-3">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+        <p className="text-[11px] leading-relaxed text-amber-100/90">
+          <span className="font-semibold text-amber-200">Heads up:</span> connecting an AI platform,
+          agent, or plugin here gives that external app{" "}
+          <span className="font-semibold">direct access to your files and data</span> — limited to the
+          permissions you approve on the sign-in screen.
+          {tier === "master"
+            ? " Master accounts can also grant admin access, so only connect apps you fully trust."
+            : " Only connect apps you trust; you decide the scopes, and you can revoke access anytime."}
+        </p>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-3">
         {sections.map((item) => {
           const active = section === item.id;

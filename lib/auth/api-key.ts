@@ -551,5 +551,21 @@ export async function requireMasterOrApiKey(
     return user;
   }
 
+  // OAuth access tokens (oat_) — master users may reach admin APIs via MCP/OAuth.
+  // Defense in depth: the account role is re-read from the DB inside
+  // authenticateOAuthAccessToken, so a token that somehow carries an admin scope
+  // is still rejected unless the underlying user is actually a master.
+  if (isOAuthBearerRequest(request)) {
+    const token = extractBearerToken(request);
+    if (!token) throw new AuthError("Unauthorized");
+    const user = await authenticateOAuthAccessToken(token, []);
+    if (!user) throw new AuthError("Unauthorized");
+    if (user.role !== "master") throw new AuthError("Forbidden", 403);
+    if (!keyHasAdminArea(user.apiKeyScopes, adminArea)) {
+      throw new AuthError(`Missing scope: admin:${adminArea}`, 403);
+    }
+    return user;
+  }
+
   return requireMaster();
 }

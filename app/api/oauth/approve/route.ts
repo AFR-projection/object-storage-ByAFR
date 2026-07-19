@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { validateOAuthClientRedirect } from "@/lib/oauth/clients";
 import { createAuthorizationCode } from "@/lib/oauth/codes";
-import { parseScopes } from "@/lib/oauth/constants";
+import { parseScopes, clampScopesToRole } from "@/lib/oauth/constants";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { validateCsrf } from "@/lib/security";
 
@@ -38,7 +38,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const scopes = parseScopes(scope);
+    const requestedScopes = parseScopes(scope);
+    // SECURITY: never trust the requested scope set. Clamp to what this account's
+    // role is allowed to hold — a non-master user can never be granted admin:* /
+    // supreme, even if the client asked and the user clicked Allow.
+    const scopes = clampScopesToRole(requestedScopes, session.role);
     const code = await createAuthorizationCode({
       clientId,
       userId: session.id,

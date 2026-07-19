@@ -6,6 +6,7 @@ import {
   Copy,
   Globe,
   Link2,
+  MousePointerClick,
   Shield,
   Sparkles,
   XCircle,
@@ -30,6 +31,21 @@ const BADGE_STYLES = {
   reference: "bg-muted/40 text-muted-foreground border-border/50",
 };
 
+const QUICK_STEPS = [
+  {
+    title: "Copy the MCP URL",
+    body: "Grab the connector URL above with one click.",
+  },
+  {
+    title: "Paste into your AI client",
+    body: "Add it as a custom MCP connector in ChatGPT, Claude, Cursor, VS Code, or any MCP-capable app.",
+  },
+  {
+    title: "Sign in & allow access",
+    body: "A browser window opens — log in and pick the permissions to grant. Done.",
+  },
+];
+
 export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const mcpUrl = primaryMcpUrl(baseUrl);
@@ -43,6 +59,7 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
 
   return (
     <div className="space-y-4">
+      {/* Hero: the one URL that matters */}
       <Card className="relative overflow-hidden border-violet-500/35 bg-gradient-to-br from-violet-600/15 via-violet-500/5 to-transparent p-5 sm:p-6">
         <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" />
         <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -82,9 +99,35 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
           <span className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-background/40 px-2.5 py-1 text-muted-foreground">
             <Globe className="h-3 w-3" /> Streamable HTTP
           </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-emerald-200">
+            <MousePointerClick className="h-3 w-3" /> No API key to paste
+          </span>
         </div>
       </Card>
 
+      {/* Dead-simple 3-step connect */}
+      <Card className="border-border/50 p-4 sm:p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <MousePointerClick className="h-4 w-4 text-violet-400" />
+          <p className="text-sm font-semibold">Connect in 3 steps</p>
+        </div>
+        <ol className="grid gap-3 sm:grid-cols-3">
+          {QUICK_STEPS.map((step, i) => (
+            <li
+              key={step.title}
+              className="relative rounded-xl border border-border/50 bg-muted/15 p-4"
+            >
+              <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-500/20 text-xs font-bold text-violet-200">
+                {i + 1}
+              </div>
+              <p className="text-sm font-medium">{step.title}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{step.body}</p>
+            </li>
+          ))}
+        </ol>
+      </Card>
+
+      {/* Full endpoint reference */}
       <Card className="overflow-hidden border-border/50">
         <div className="border-b border-border/50 bg-muted/15 px-4 py-3.5 sm:px-5">
           <div className="flex items-center gap-2">

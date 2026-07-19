@@ -116,6 +116,134 @@ export function registerStorageMcpTools(server: McpServer, client: StorageApiCli
     }
   );
 
+  // ---- Write tools (require the matching scope on the key/token) ----
+
+  server.registerTool(
+    "storage_rename_file",
+    {
+      description:
+        "Rename a file. Requires the 'write' scope. Returns 403 if the key lacks it.",
+      inputSchema: z.object({
+        fileId: z.string().uuid(),
+        name: z.string().min(1).max(255),
+      }),
+    },
+    async ({ fileId, name }) => {
+      try {
+        return toolResult(
+          await client.patch("/api/files", { id: fileId, action: "rename", name })
+        );
+      } catch (e) {
+        return toolError(e instanceof Error ? e.message : "Rename failed");
+      }
+    }
+  );
+
+  server.registerTool(
+    "storage_move_file",
+    {
+      description:
+        "Move a file into a folder (or to the root when folderId is omitted). Requires 'write' scope.",
+      inputSchema: z.object({
+        fileId: z.string().uuid(),
+        folderId: z.string().uuid().nullable().optional().describe("Destination folder, or null for root"),
+      }),
+    },
+    async ({ fileId, folderId }) => {
+      try {
+        return toolResult(
+          await client.patch("/api/files", {
+            id: fileId,
+            action: "move",
+            folderId: folderId ?? null,
+          })
+        );
+      } catch (e) {
+        return toolError(e instanceof Error ? e.message : "Move failed");
+      }
+    }
+  );
+
+  server.registerTool(
+    "storage_favorite_file",
+    {
+      description: "Toggle the favorite flag on a file. Requires 'write' scope.",
+      inputSchema: z.object({
+        fileId: z.string().uuid(),
+      }),
+    },
+    async ({ fileId }) => {
+      try {
+        return toolResult(
+          await client.patch("/api/files", { id: fileId, action: "favorite" })
+        );
+      } catch (e) {
+        return toolError(e instanceof Error ? e.message : "Favorite failed");
+      }
+    }
+  );
+
+  server.registerTool(
+    "storage_update_note",
+    {
+      description:
+        "Replace the body of a .note file with new content (Tiptap/ProseMirror JSON document). Requires 'write' scope.",
+      inputSchema: z.object({
+        fileId: z.string().uuid(),
+        content: z
+          .record(z.string(), z.unknown())
+          .describe("Tiptap JSON document, e.g. { type: 'doc', content: [...] }"),
+      }),
+    },
+    async ({ fileId, content }) => {
+      try {
+        return toolResult(await client.put(`/api/files/${fileId}`, { content }));
+      } catch (e) {
+        return toolError(e instanceof Error ? e.message : "Update note failed");
+      }
+    }
+  );
+
+  server.registerTool(
+    "storage_restore_file",
+    {
+      description: "Restore a file from the recycle bin. Requires 'write' scope.",
+      inputSchema: z.object({
+        fileId: z.string().uuid(),
+      }),
+    },
+    async ({ fileId }) => {
+      try {
+        return toolResult(
+          await client.patch("/api/files", { id: fileId, action: "restore" })
+        );
+      } catch (e) {
+        return toolError(e instanceof Error ? e.message : "Restore failed");
+      }
+    }
+  );
+
+  server.registerTool(
+    "storage_delete_file",
+    {
+      description:
+        "Delete a file. By default moves it to the recycle bin; pass permanent=true to erase it forever (only works if already in the bin). Requires 'delete' scope.",
+      inputSchema: z.object({
+        fileId: z.string().uuid(),
+        permanent: z.boolean().optional().describe("Permanently erase (must already be in recycle bin)"),
+      }),
+    },
+    async ({ fileId, permanent }) => {
+      try {
+        return toolResult(
+          await client.del("/api/files", { id: fileId, permanent: permanent ?? false })
+        );
+      } catch (e) {
+        return toolError(e instanceof Error ? e.message : "Delete failed");
+      }
+    }
+  );
+
   server.registerTool(
     "admin_get_stats",
     {

@@ -45,6 +45,9 @@ export async function GET(request: NextRequest) {
     code_challenge: codeChallenge,
     code_challenge_method: codeChallengeMethod,
   });
+  if (clientCheck.client.clientName) {
+    consentParams.set("client_name", clientCheck.client.clientName);
+  }
 
   if (!session) {
     const loginNext = `/oauth/consent?${consentParams.toString()}`;

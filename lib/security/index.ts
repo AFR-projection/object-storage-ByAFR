@@ -76,11 +76,20 @@ export function resetIpRateLimit(ip: string): void {
 import type { NextRequest } from "next/server";
 
 export async function validateCsrf(request: NextRequest): Promise<boolean> {
-  // Skip CSRF for Bearer API keys (sk_*) — they are not browser cookie sessions.
+  // Skip CSRF for programmatic Bearer credentials (sk_/skm_ API keys and oat_
+  // OAuth access tokens). These are never sent automatically by a browser, so
+  // they carry no CSRF risk — and requiring a CSRF cookie would break every
+  // headless API/MCP client that writes (upload, edit, delete).
   const auth = request.headers.get("authorization");
   if (auth?.startsWith("Bearer ")) {
     const token = auth.slice(7).trim();
-    if (token.startsWith("sk_")) return true;
+    if (
+      token.startsWith("sk_") ||
+      token.startsWith("skm_") ||
+      token.startsWith("oat_")
+    ) {
+      return true;
+    }
   }
 
   const headerToken = request.headers.get("x-csrf-token");

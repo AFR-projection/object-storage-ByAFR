@@ -7,7 +7,7 @@ import {
   hashSecret,
   OAUTH_CODE_PREFIX,
   verifyPkce,
-  type OAuthScope,
+  type AnyOAuthScope,
   scopesToString,
 } from "@/lib/oauth/constants";
 
@@ -15,7 +15,7 @@ export async function createAuthorizationCode(input: {
   clientId: string;
   userId: string;
   redirectUri: string;
-  scopes: OAuthScope[];
+  scopes: AnyOAuthScope[];
   codeChallenge: string;
   codeChallengeMethod: string;
 }): Promise<string> {

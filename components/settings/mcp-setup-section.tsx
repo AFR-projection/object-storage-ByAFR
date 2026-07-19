@@ -133,10 +133,23 @@ export function McpSetupSection({
         </>
       )}
 
-      <p className="text-[10px] text-muted-foreground">
-        Tools: storage_verify, storage_list_files, storage_search, storage_list_folders, storage_get_file
-        {variant === "master" ? ", admin_get_stats, admin_list_users, admin_get_settings" : ""}
-      </p>
+      <div className="space-y-1 text-[10px] text-muted-foreground">
+        <p>
+          <span className="text-foreground/70">Read:</span> storage_verify, storage_list_files,
+          storage_search, storage_list_folders, storage_get_file, storage_get_docs
+        </p>
+        <p>
+          <span className="text-foreground/70">Write</span> (needs write/delete scope):
+          storage_rename_file, storage_move_file, storage_favorite_file, storage_update_note,
+          storage_restore_file, storage_delete_file
+        </p>
+        {variant === "master" && (
+          <p>
+            <span className="text-foreground/70">Admin</span> (master key): admin_get_stats,
+            admin_list_users, admin_get_settings
+          </p>
+        )}
+      </div>
       <p className="text-[10px] text-amber-500/90">
         Never paste API keys in AI chat. Keys belong in MCP env or secure connector settings only.
       </p>

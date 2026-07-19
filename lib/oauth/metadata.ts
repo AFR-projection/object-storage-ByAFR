@@ -1,5 +1,5 @@
-import { appPublicUrl, isInternalHostname, resolvePublicOrigin } from "@/lib/env/runtime";
-import { OAUTH_SCOPES, oauthBaseUrl, mcpResourceUrl } from "@/lib/oauth/constants";
+import { appPublicUrl, isInternalHostname } from "@/lib/env/runtime";
+import { ALL_OAUTH_SCOPES, oauthBaseUrl, mcpResourceUrl } from "@/lib/oauth/constants";
 
 export function getOAuthIssuer(fallbackOrigin?: string): string {
   const env = appPublicUrl();
@@ -32,7 +32,7 @@ export function buildAuthorizationServerMetadata(fallbackOrigin?: string) {
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
-    scopes_supported: [...OAUTH_SCOPES],
+    scopes_supported: [...ALL_OAUTH_SCOPES],
   };
 }
 
@@ -41,7 +41,7 @@ export function buildProtectedResourceMetadata(fallbackOrigin?: string) {
   return {
     resource: mcpResourceUrl(base),
     authorization_servers: [base],
-    scopes_supported: [...OAUTH_SCOPES],
+    scopes_supported: [...ALL_OAUTH_SCOPES],
     bearer_methods_supported: ["header"],
   };
 }
