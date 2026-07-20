@@ -88,8 +88,8 @@ function formatRelative(date: string | Date | null): string {
 
 function scopeBadgeClass(scope: string): string {
   if (scope === "supreme") return "border-amber-500/40 bg-amber-500/15 text-amber-400";
-  if (scope.startsWith("admin")) return "border-violet-500/30 bg-violet-500/10 text-violet-300";
-  return "border-sky-500/30 bg-sky-500/10 text-sky-300";
+  if (scope.startsWith("admin")) return "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300";
+  return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300";
 }
 
 type MasterApiKeysSectionProps = {

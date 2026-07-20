@@ -174,7 +174,7 @@ export default function OAuthConsentClient() {
         {/* Awareness: this grants an outside app direct access to your data */}
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] p-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-          <p className="text-[11px] leading-relaxed text-amber-100/90">
+          <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-100/90">
             This gives an <span className="font-semibold">external app direct access to your data</span>{" "}
             with the permissions you check below. Only allow apps you trust — you can revoke this
             anytime from the Connection page. Never approve a request you didn&apos;t start yourself.
@@ -210,7 +210,7 @@ export default function OAuthConsentClient() {
                     <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
                       {meta.label}
                       {meta.danger && (
-                        <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-amber-300">
+                        <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
                           sensitive
                         </span>
                       )}

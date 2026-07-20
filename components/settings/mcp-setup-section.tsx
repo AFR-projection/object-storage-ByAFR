@@ -55,14 +55,14 @@ export function McpSetupSection({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Plug className="h-4 w-4 text-violet-400" />
-          <p className="text-sm font-semibold text-violet-200">MCP configuration</p>
+          <p className="text-sm font-semibold text-violet-700 dark:text-violet-200">MCP configuration</p>
         </div>
         <div className="flex rounded-lg border border-border/50 bg-background/40 p-0.5 text-[10px]">
           <button
             type="button"
             className={cn(
               "rounded-md px-2.5 py-1 font-medium transition-colors",
-              mode === "remote" ? "bg-violet-500/20 text-violet-200" : "text-muted-foreground"
+              mode === "remote" ? "bg-violet-500/20 text-violet-700 dark:text-violet-200" : "text-muted-foreground"
             )}
             onClick={() => setMode("remote")}
           >
@@ -72,7 +72,7 @@ export function McpSetupSection({
             type="button"
             className={cn(
               "rounded-md px-2.5 py-1 font-medium transition-colors",
-              mode === "local" ? "bg-violet-500/20 text-violet-200" : "text-muted-foreground"
+              mode === "local" ? "bg-violet-500/20 text-violet-700 dark:text-violet-200" : "text-muted-foreground"
             )}
             onClick={() => setMode("local")}
           >
@@ -88,8 +88,8 @@ export function McpSetupSection({
             Streamable HTTP with OAuth 2.1 — required for MCP connector / plugin forms. No manual API key paste.
           </p>
           <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] p-3">
-            <p className="text-[10px] font-medium text-emerald-300/90 mb-1">Correct MCP Server URL</p>
-            <code className="text-[11px] font-mono break-all text-emerald-200/90">{remoteUrl}</code>
+            <p className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300/90 mb-1">Correct MCP Server URL</p>
+            <code className="text-[11px] font-mono break-all text-emerald-700 dark:text-emerald-200/90">{remoteUrl}</code>
           </div>
           <ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground">
             {MCP_REMOTE_SETUP_STEPS.map((step) => (

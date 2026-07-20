@@ -30,7 +30,7 @@ function LiveStatusBadge() {
   const active = data?.live?.mcpSessionsActive ?? 0;
 
   return (
-    <div className="flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+    <div className="flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
       <span className="relative flex h-2 w-2">
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
         <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
@@ -48,7 +48,8 @@ function ConnectionPageInner() {
     sectionParam === "keys" ||
     sectionParam === "mcp" ||
     sectionParam === "endpoints" ||
-    sectionParam === "apps"
+    sectionParam === "apps" ||
+    sectionParam === "webhooks"
       ? sectionParam
       : "endpoints";
 
@@ -84,7 +85,7 @@ function ConnectionPageInner() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <LiveStatusBadge />
-          <div className="flex items-center gap-2 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-300">
+          <div className="flex items-center gap-2 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-700 dark:text-violet-300">
             <Plug className="h-3.5 w-3.5" />
             {tier === "master" ? "Master access" : "Platform connectors"}
           </div>

@@ -6,7 +6,7 @@ import { useDropzone } from "react-dropzone";
 import {
   Upload, FolderPlus, FilePlus, Grid3X3, List, Search, Trash2, AlertCircle, FolderUp,
   Image, Film, Music, FileText, FileArchive, Star, X, CheckSquare, Square,
-  Download, File, Lock, Move,
+  Download, File, Lock, Move, ArrowDownUp, ArrowUp, ArrowDown, Check, PencilRuler,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,13 @@ import { UploadQueue, traverseDirectory } from "@/lib/upload-queue";
 import { requestDownload, downloadZip } from "@/lib/download/download-actions";
 import { EncryptionSetupDialog } from "./encryption-setup-dialog";
 import { MoveToFolderDialog } from "./move-to-folder-dialog";
+import { BulkRenameDialog } from "./bulk-rename-dialog";
 import { useDialogs } from "@/components/ui/dialog-prompts";
+import {
+  loadView, saveView, loadSortBy, saveSortBy, loadSortOrder, saveSortOrder,
+  SORT_OPTIONS,
+} from "@/lib/files/view-prefs";
+import { sortFiles } from "@/lib/files/sort";
 import { motion, AnimatePresence } from "framer-motion";
 
 const NoteEditor = dynamic(() => import("@/components/editors/note-editor").then((m) => m.NoteEditor), { ssr: false });
@@ -75,18 +81,26 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   const queryClient = useQueryClient();
   const { askPrompt, askConfirm, dialogs } = useDialogs();
 
-  // View + search + filter + sort
-  const [view, setView] = useState<"grid" | "list">("grid");
+  // View + search + filter + sort (view & sort persist across sessions)
+  const [view, setView] = useState<"grid" | "list">(() => loadView());
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<FilterKey>("all");
-  const [sortBy, setSortBy] = useState("name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortBy, setSortBy] = useState<string>(() => loadSortBy());
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => loadSortOrder());
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+
+  const setViewPersisted = useCallback((v: "grid" | "list") => {
+    setView(v);
+    saveView(v);
+  }, []);
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Move-to-folder dialog: holds the file ids being moved (null = closed)
   const [moveIds, setMoveIds] = useState<string[] | null>(null);
+  // Bulk-rename dialog: holds the files being renamed (null = closed)
+  const [bulkRenameIds, setBulkRenameIds] = useState<string[] | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // File preview / note editor
@@ -608,22 +622,68 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   // ── Sort toggle ──
   const handleSort = useCallback((key: string) => {
     if (sortBy === key) {
-      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+      setSortOrder((o) => {
+        const next = o === "asc" ? "desc" : "asc";
+        saveSortOrder(next);
+        return next;
+      });
     } else {
       setSortBy(key);
+      saveSortBy(key);
       setSortOrder("asc");
+      saveSortOrder("asc");
     }
   }, [sortBy]);
 
+  const chooseSort = useCallback((key: string) => {
+    setSortBy(key);
+    saveSortBy(key);
+    setSortMenuOpen(false);
+  }, []);
+
+  const toggleSortOrder = useCallback(() => {
+    setSortOrder((o) => {
+      const next = o === "asc" ? "desc" : "asc";
+      saveSortOrder(next);
+      return next;
+    });
+  }, []);
+
   // ── Selection ──
-  const toggleSelect = useCallback((id: string, _shiftKey?: boolean) => {
+  // Files in the exact order the user sees them (filter + sort) — the basis for
+  // shift-click range selection so a range matches the on-screen order.
+  const visibleFiles = useMemo(
+    () => sortFiles(filteredFiles, sortBy, sortOrder),
+    [filteredFiles, sortBy, sortOrder]
+  );
+  const lastSelectedId = useRef<string | null>(null);
+
+  const toggleSelect = useCallback((id: string, shiftKey?: boolean) => {
+    // Shift-click: select the contiguous range from the last anchor to here.
+    if (shiftKey && lastSelectedId.current) {
+      const order = visibleFiles.map((f) => f.id);
+      const from = order.indexOf(lastSelectedId.current);
+      const to = order.indexOf(id);
+      if (from !== -1 && to !== -1) {
+        const [lo, hi] = from < to ? [from, to] : [to, from];
+        const range = order.slice(lo, hi + 1);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          for (const rid of range) next.add(rid);
+          return next;
+        });
+        lastSelectedId.current = id;
+        return;
+      }
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }, []);
+    lastSelectedId.current = id;
+  }, [visibleFiles]);
 
   const toggleSelectAll = useCallback(() => {
     setSelectedIds((prev) => {
@@ -687,6 +747,27 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     } catch {
       showError("Connection failed");
     }
+  }
+
+  // Apply a set of computed renames (from the bulk-rename dialog).
+  async function executeBulkRename(renames: { id: string; name: string }[]) {
+    setBulkRenameIds(null);
+    if (renames.length === 0) return;
+    let failed = 0;
+    for (const r of renames) {
+      try {
+        const res = await apiFetch("/api/files", {
+          method: "PATCH",
+          body: JSON.stringify({ id: r.id, action: "rename", name: r.name }),
+        });
+        if (!res.success) failed++;
+      } catch {
+        failed++;
+      }
+    }
+    if (failed > 0) showError(`${failed} file${failed > 1 ? "s" : ""} could not be renamed`);
+    setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ["files"] });
   }
 
   async function batchDownload() {
@@ -785,13 +866,19 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
       }
 
       // Plain g / l toggle grid / list.
-      if (e.key === "g" && !e.ctrlKey && !e.metaKey) { setView("grid"); return; }
-      if (e.key === "l" && !e.ctrlKey && !e.metaKey) { setView("list"); return; }
+      if (e.key === "g" && !e.ctrlKey && !e.metaKey) { setViewPersisted("grid"); return; }
+      if (e.key === "l" && !e.ctrlKey && !e.metaKey) { setViewPersisted("list"); return; }
 
       // The rest act on the current selection.
       if (selectedIds.size === 0) return;
       const selected = filteredFiles.filter((f) => selectedIds.has(f.id));
 
+      // Spacebar quick-preview a single selected file (macOS Quick Look style).
+      if (e.key === " " && selected.length === 1) {
+        e.preventDefault();
+        handleFileClick(selected[0]);
+        return;
+      }
       // Delete / Backspace → trash selection.
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
@@ -937,6 +1024,58 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
             </label>
           )}
 
+          {/* Sort dropdown — lets grid view sort too, not just list headers */}
+          <div className="relative">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-9 gap-1.5 px-2 sm:px-3"
+              onClick={() => setSortMenuOpen((o) => !o)}
+              title="Sort files"
+            >
+              <ArrowDownUp className="h-4 w-4 sm:mr-0.5" />
+              <span className="hidden sm:inline">
+                {SORT_OPTIONS.find((o) => o.key === sortBy)?.label ?? "Sort"}
+              </span>
+            </Button>
+            <AnimatePresence>
+              {sortMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setSortMenuOpen(false)} />
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ duration: 0.14 }}
+                    className="absolute right-0 z-50 mt-1.5 w-48 overflow-hidden rounded-xl border border-border/60 bg-surface-elevated/95 py-1 shadow-2xl backdrop-blur-xl"
+                  >
+                    {SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.key}
+                        onClick={() => chooseSort(opt.key)}
+                        className={cn(
+                          "flex w-full items-center justify-between px-3.5 py-2 text-[13px] font-medium transition-colors hover:bg-accent/10",
+                          sortBy === opt.key ? "text-accent" : "text-foreground"
+                        )}
+                      >
+                        {opt.label}
+                        {sortBy === opt.key && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                    ))}
+                    <div className="my-1 mx-2 border-t border-border/40" />
+                    <button
+                      onClick={toggleSortOrder}
+                      className="flex w-full items-center gap-2 px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-accent/10"
+                    >
+                      {sortOrder === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                      {sortOrder === "asc" ? "Ascending" : "Descending"}
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* View toggle */}
           <div className="flex items-center border border-border/40 rounded-lg overflow-hidden ml-1">
             <Button
@@ -946,7 +1085,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
                 "rounded-none h-8 w-8",
                 view === "grid" ? "bg-accent/10 text-accent" : ""
               )}
-              onClick={() => setView("grid")}
+              onClick={() => setViewPersisted("grid")}
             >
               <Grid3X3 className="h-3.5 w-3.5" />
             </Button>
@@ -957,7 +1096,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
                 "rounded-none h-8 w-8",
                 view === "list" ? "bg-accent/10 text-accent" : ""
               )}
-              onClick={() => setView("list")}
+              onClick={() => setViewPersisted("list")}
             >
               <List className="h-3.5 w-3.5" />
             </Button>
@@ -1028,6 +1167,12 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
               <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setMoveIds(Array.from(selectedIds))}>
                 <Move className="h-3.5 w-3.5" />
                 Move
+              </Button>
+            )}
+            {!trash && selectedIds.size >= 2 && (
+              <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setBulkRenameIds(Array.from(selectedIds))}>
+                <PencilRuler className="h-3.5 w-3.5" />
+                Rename
               </Button>
             )}
             <Button variant="secondary" size="sm" className="gap-1.5" onClick={batchFavorite}>
@@ -1121,6 +1266,16 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
           disabledFolderIds={folderId ? [folderId] : []}
           onCancel={() => setMoveIds(null)}
           onConfirm={(dest) => executeMove(moveIds, dest)}
+        />
+      )}
+
+      {bulkRenameIds && (
+        <BulkRenameDialog
+          files={allFiles
+            .filter((f) => bulkRenameIds.includes(f.id))
+            .map((f) => ({ id: f.id, name: f.name }))}
+          onCancel={() => setBulkRenameIds(null)}
+          onConfirm={executeBulkRename}
         />
       )}
 

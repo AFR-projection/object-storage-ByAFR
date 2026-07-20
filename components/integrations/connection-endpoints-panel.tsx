@@ -25,9 +25,9 @@ type ConnectionEndpointsPanelProps = {
 };
 
 const BADGE_STYLES = {
-  recommended: "bg-violet-500/20 text-violet-300 border-violet-500/40",
-  oauth: "bg-sky-500/15 text-sky-300 border-sky-500/30",
-  "api-key": "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  recommended: "bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/40",
+  oauth: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30",
+  "api-key": "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
   reference: "bg-muted/40 text-muted-foreground border-border/50",
 };
 
@@ -66,7 +66,7 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
           <div className="space-y-2 min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-violet-400" />
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-violet-300">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300">
                 Primary MCP connector URL
               </p>
             </div>
@@ -93,13 +93,13 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
           </Button>
         </div>
         <div className="relative mt-4 flex flex-wrap gap-2 text-[10px]">
-          <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-violet-200">
+          <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-violet-700 dark:text-violet-200">
             <Shield className="h-3 w-3" /> OAuth 2.1 + PKCE
           </span>
           <span className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-background/40 px-2.5 py-1 text-muted-foreground">
             <Globe className="h-3 w-3" /> Streamable HTTP
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-emerald-200">
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-200">
             <MousePointerClick className="h-3 w-3" /> No API key to paste
           </span>
         </div>
@@ -117,7 +117,7 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
               key={step.title}
               className="relative rounded-xl border border-border/50 bg-muted/15 p-4"
             >
-              <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-500/20 text-xs font-bold text-violet-200">
+              <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-500/20 text-xs font-bold text-violet-700 dark:text-violet-200">
                 {i + 1}
               </div>
               <p className="text-sm font-medium">{step.title}</p>
@@ -162,7 +162,7 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
                       {ep.primary ? "use this" : badge.replace("-", " ")}
                     </span>
                     {ep.avoidForMcp && (
-                      <span className="rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[9px] text-red-300">
+                      <span className="rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[9px] text-red-600 dark:text-red-300">
                         not MCP URL
                       </span>
                     )}
@@ -197,11 +197,11 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
         <div className="flex items-start gap-2.5">
           <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
           <div className="space-y-2 min-w-0">
-            <p className="text-sm font-medium text-red-200">Do not paste these into the MCP connector form</p>
+            <p className="text-sm font-medium text-red-600 dark:text-red-200">Do not paste these into the MCP connector form</p>
             <ul className="space-y-1.5 text-[11px] text-muted-foreground">
               {WRONG_MCP_URLS.map((item) => (
                 <li key={item.path} className="flex flex-wrap gap-x-1">
-                  <code className="text-red-300/90">{baseUrl.replace(/\/$/, "")}{item.path}</code>
+                  <code className="text-red-600 dark:text-red-300/90">{baseUrl.replace(/\/$/, "")}{item.path}</code>
                   <span>— {item.reason}</span>
                 </li>
               ))}

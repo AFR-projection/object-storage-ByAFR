@@ -10,6 +10,7 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { cn, formatBytes, formatDate, getMimeCategory } from "@/lib/utils";
+import { sortFiles } from "@/lib/files/sort";
 import { Button } from "@/components/ui/button";
 import { FloatingActionMenu, useFloatingMenu, type FloatingMenuItem } from "@/components/ui/floating-action-menu";
 import type { File as FileRecord } from "@/lib/db/schema";
@@ -80,16 +81,6 @@ function getGradientFallback(mimeType: string): string {
     text: "from-gray-500/15 to-zinc-500/10",
   };
   return g[getMimeCategory(mimeType)] ?? "from-gray-500/10 to-zinc-500/5";
-}
-
-function getSortValue(file: FileRecord, sortBy: string): string | number {
-  switch (sortBy) {
-    case "name": return file.name.toLowerCase();
-    case "size": return Number(file.sizeBytes);
-    case "date": return new Date(file.updatedAt).getTime();
-    case "type": return file.mimeType;
-    default: return file.name.toLowerCase();
-  }
 }
 
 function getTypeLabel(mimeType: string): string {
@@ -270,19 +261,7 @@ export function FileGrid({
   const allSelected = files.length > 0 && selectedIds.size === files.length;
 
   // ── Sorted files ──
-  const sorted = useMemo(() => {
-    if (!files.length) return files;
-    return [...files].sort((a, b) => {
-      const va = getSortValue(a, sortBy);
-      const vb = getSortValue(b, sortBy);
-      if (typeof va === "string" && typeof vb === "string") {
-        return sortOrder === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
-      }
-      return sortOrder === "asc"
-        ? (va as number) - (vb as number)
-        : (vb as number) - (va as number);
-    });
-  }, [files, sortBy, sortOrder]);
+  const sorted = useMemo(() => sortFiles(files, sortBy, sortOrder), [files, sortBy, sortOrder]);
 
   // ── Virtual list ──
   const listRef = useRef<HTMLDivElement>(null);
@@ -457,7 +436,7 @@ const GridCard = memo(function GridCard({
 }: {
   file: FileRecord; index: number; selected: boolean;
   trash?: boolean; onFileAction: (a: string, f: FileRecord) => void;
-  onFileClick: (f: FileRecord) => void; onSelect: (id: string) => void;
+  onFileClick: (f: FileRecord) => void; onSelect: (id: string, shiftKey?: boolean) => void;
 }) {
   const [hoverInfo, setHoverInfo] = useState(false);
   const ctxMenu = useContextMenu();
@@ -484,7 +463,7 @@ const GridCard = memo(function GridCard({
     >
       {/* Selection checkbox — always visible on mobile, hover on desktop */}
       <button
-        onClick={(e) => { e.stopPropagation(); onSelect(file.id); }}
+        onClick={(e) => { e.stopPropagation(); onSelect(file.id, e.shiftKey); }}
         className={cn(
           "absolute top-1 left-1 z-30 flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded-md border transition-all",
           selected

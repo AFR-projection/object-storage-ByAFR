@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { KeyRound, User, Monitor, Shield, Loader2, Key, Webhook, Plus, Copy, Trash2 } from "lucide-react";
+import { KeyRound, User, Monitor, Shield, Plug, ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useTheme } from "@/components/theme-provider";
 import { apiFetch } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
@@ -14,7 +13,6 @@ import {
   PasswordSection as SharedPasswordSection,
   TwoFactorSection as SharedTwoFactorSection,
 } from "@/components/account/account-security-sections";
-import { ApiKeysSection } from "@/components/settings/api-keys-section";
 import { SessionsSection } from "@/components/settings/sessions-section";
 import { rememberCurrentSessionId } from "@/hooks/use-realtime-events";
 interface SessionUser {
@@ -76,22 +74,6 @@ function SettingsContent({ user }: { user: SessionUser }) {
       component: <ProfileSection user={user} />,
     },
     {
-      id: "api-keys",
-      title: "API Keys",
-      description: "Connect AI agents & external tools",
-      icon: Key,
-      gradient: "from-sky-500 to-blue-600",
-      component: <ApiKeysSection />,
-    },
-    {
-      id: "webhooks",
-      title: "Webhooks",
-      description: "HTTP callbacks for upload, delete, share",
-      icon: Webhook,
-      gradient: "from-rose-500 to-orange-500",
-      component: <WebhooksSection />,
-    },
-    {
       id: "appearance",
       title: "Appearance",
       description: "Theme preferences",
@@ -117,6 +99,25 @@ function SettingsContent({ user }: { user: SessionUser }) {
           Manage your account settings and preferences
         </p>
       </div>
+
+      {/* Integrations live on their own page — point users there instead of duplicating */}
+      <Link href="/connection" className="block">
+        <Card className="group relative overflow-hidden border-violet-500/25 bg-gradient-to-br from-violet-500/[0.08] via-transparent to-sky-500/[0.05] p-4 transition-all hover:border-violet-500/40 hover:shadow-lg sm:p-5">
+          <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-violet-500/10 blur-2xl" />
+          <div className="relative flex items-center gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-sm">
+              <Plug className="h-5 w-5 text-white" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Connection & integrations</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                API keys, MCP setup, connected apps, and webhooks — all in one place
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-violet-500" />
+          </div>
+        </Card>
+      </Link>
 
       <div className="space-y-3">
         {sections.map((section) => {
@@ -183,159 +184,6 @@ function PasswordSection() {
 
 function TwoFactorSection({ enabled }: { enabled: boolean }) {
   return <SharedTwoFactorSection enabled={enabled} />;
-}
-
-// ─── Webhooks Section ─────────────────────────────────────────────────────────
-
-type WebhookRow = {
-  id: string;
-  url: string;
-  events: string[];
-  enabled: boolean;
-  lastDeliveryAt: string | Date | null;
-  lastStatus: number | null;
-  createdAt: string | Date;
-};
-
-function WebhooksSection() {
-  const [url, setUrl] = useState("");
-  const [events, setEvents] = useState<string[]>(["upload", "delete", "share"]);
-  const [createdSecret, setCreatedSecret] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ["webhooks"],
-    queryFn: async () => {
-      const res = await apiFetch<{ webhooks: WebhookRow[] }>("/api/settings/webhooks");
-      if (!res.success) throw new Error(res.error ?? "Failed to load");
-      return res.data!.webhooks;
-    },
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiFetch<{ webhook: WebhookRow & { secret: string } }>("/api/settings/webhooks", {
-        method: "POST",
-        body: JSON.stringify({ url, events }),
-      });
-      if (!res.success) throw new Error(res.error ?? "Failed to create");
-      return res.data!.webhook;
-    },
-    onSuccess: (hook) => {
-      setCreatedSecret(hook.secret);
-      setUrl("");
-      setError(null);
-      refetch();
-    },
-    onError: (err: Error) => setError(err.message),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiFetch("/api/settings/webhooks", {
-        method: "DELETE",
-        body: JSON.stringify({ id }),
-      });
-      if (!res.success) throw new Error(res.error ?? "Failed to delete");
-    },
-    onSuccess: () => refetch(),
-  });
-
-  function toggleEvent(ev: string) {
-    setEvents((prev) =>
-      prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev]
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!url.trim() || events.length === 0) return;
-          createMutation.mutate();
-        }}
-      >
-        <Input
-          type="url"
-          placeholder="https://example.com/webhook"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
-        />
-        <div className="flex flex-wrap gap-2">
-          {(["upload", "delete", "share"] as const).map((ev) => (
-            <button
-              key={ev}
-              type="button"
-              onClick={() => toggleEvent(ev)}
-              className={cn(
-                "rounded-lg border px-3 py-1.5 text-xs font-medium capitalize",
-                events.includes(ev) ? "border-accent bg-accent/10 text-accent" : "border-border text-muted-foreground"
-              )}
-            >
-              {ev}
-            </button>
-          ))}
-        </div>
-        <Button type="submit" disabled={createMutation.isPending || !url.trim() || events.length === 0} className="w-full">
-          {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-          Add Webhook
-        </Button>
-      </form>
-
-      {createdSecret && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
-          <p className="mb-1 text-xs font-medium text-amber-500">Signing secret — copy now</p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 break-all text-xs">{createdSecret}</code>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={() => navigator.clipboard.writeText(createdSecret)}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {error && <p className="text-xs text-danger">{error}</p>}
-
-      {isLoading ? (
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-      ) : (
-        <ul className="space-y-2">
-          {(data ?? []).length === 0 && (
-            <li className="text-xs text-muted-foreground">No webhooks yet.</li>
-          )}
-          {(data ?? []).map((h) => (
-            <li key={h.id} className="flex items-center justify-between gap-2 rounded-lg bg-surface-hover/50 px-3 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{h.url}</p>
-                <p className="text-xs text-muted-foreground">
-                  {h.events.join(", ")} · {h.enabled ? "enabled" : "disabled"}
-                  {h.lastStatus != null ? ` · last ${h.lastStatus}` : ""}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-danger"
-                onClick={() => {
-                  if (confirm("Delete this webhook?")) deleteMutation.mutate(h.id);
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 // ─── Profile Section ──────────────────────────────────────────────────────────
