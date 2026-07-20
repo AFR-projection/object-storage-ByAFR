@@ -118,7 +118,7 @@ export function McpSetupSection({
               <li key={step}>{step}</li>
             ))}
           </ol>
-          <pre className="max-h-48 overflow-auto rounded-lg bg-black/30 p-3 text-[10px] leading-relaxed text-emerald-300/90">
+          <pre className="max-h-48 overflow-auto rounded-lg bg-neutral-900 p-3 text-[10px] leading-relaxed text-emerald-300/90 ring-1 ring-white/10">
             {mcpConfig}
           </pre>
           <Button

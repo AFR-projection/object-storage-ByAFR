@@ -16,7 +16,7 @@ import {
 import { logActivity } from "@/lib/auth/audit";
 import { peekRateLimit, checkRateLimit, resetRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
-import { notifyUser } from "@/lib/whatsapp/notify-user";
+import { notifyUser } from "@/lib/email/notify-user";
 import { getIpLocation } from "@/lib/access-tracking";
 import {
   createPending2faToken,
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
         user: {
           id: pendingUser.id,
           username: pendingUser.username,
-          phone: pendingUser.phone,
+          email: pendingUser.email,
           role: pendingUser.role,
         },
         mustChangePassword: pendingUser.mustChangePassword,
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
     const [user] = await db
       .select()
       .from(users)
-      .where(or(eq(users.username, identifier!), eq(users.phone, identifier!)))
+      .where(or(eq(users.username, identifier!), eq(users.email, identifier!.toLowerCase())))
       .limit(1);
 
     // Unknown user — count toward IP throttle only
@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
       user: {
         id: user.id,
         username: user.username,
-        phone: user.phone,
+        email: user.email,
         role: user.role,
       },
       mustChangePassword: user.mustChangePassword,
@@ -355,7 +355,7 @@ export async function GET() {
     return apiSuccess({
       id: user.id,
       username: user.username,
-      phone: user.phone,
+      email: user.email,
       role: user.role,
       quotaBytes: user.quotaBytes,
       usedBytes: user.usedBytes,

@@ -16,7 +16,7 @@ const MASTER_SCOPES = [
   "admin:stats",
   "admin:monitoring",
   "admin:shares",
-  "admin:whatsapp",
+  "admin:email",
 ] as const;
 
 type AnyScope = (typeof STORAGE_SCOPES)[number] | (typeof MASTER_SCOPES)[number];
@@ -35,7 +35,7 @@ const SCOPE_LABELS: Record<AnyScope, { label: string; description: string; dange
   "admin:stats": { label: "Statistics", description: "Read dashboard statistics" },
   "admin:monitoring": { label: "Monitoring", description: "System health and monitoring" },
   "admin:shares": { label: "All shares", description: "Manage every shared link platform-wide", danger: true },
-  "admin:whatsapp": { label: "WhatsApp", description: "WhatsApp sender management", danger: true },
+  "admin:email": { label: "Email", description: "Gmail sender management for OTP + notifications", danger: true },
 };
 
 const MASTER_SET = new Set<string>(MASTER_SCOPES);

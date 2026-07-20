@@ -9,7 +9,7 @@ import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { logActivity } from "@/lib/auth/audit";
 import { validatePasswordStrength } from "@/lib/security/password-policy";
 import { validateCsrf } from "@/lib/security";
-import { notifyUser } from "@/lib/whatsapp/notify-user";
+import { notifyUser } from "@/lib/email/notify-user";
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1).optional(),

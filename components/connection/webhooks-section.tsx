@@ -311,7 +311,7 @@ export function WebhooksSection() {
 
                       {/* Secret */}
                       <div className="mt-2 flex items-center gap-1.5">
-                        <code className="min-w-0 flex-1 truncate rounded-md bg-black/25 px-2 py-1 font-mono text-[10.5px] text-emerald-300/90">
+                        <code className="min-w-0 flex-1 truncate rounded-md bg-neutral-900 px-2 py-1 font-mono text-[10.5px] text-emerald-300/90 ring-1 ring-white/10">
                           {isRevealed ? hook.secret : "whsec_" + "•".repeat(20)}
                         </code>
                         <Button

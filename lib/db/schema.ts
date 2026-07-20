@@ -27,7 +27,8 @@ const tsvector = customType<{ data: string }>({
 
 export const userRoleEnum = pgEnum("user_role", ["master", "user"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "suspended"]);
-export const waStatusEnum = pgEnum("wa_status", ["connecting", "connected", "disconnected", "error"]);
+/** Verification state of a Gmail SMTP sender: "ok" once a live SMTP handshake succeeds. */
+export const mailStatusEnum = pgEnum("mail_status", ["unverified", "ok", "error"]);
 export const sharePermissionEnum = pgEnum("share_permission", ["view", "edit"]);
 export const activityActionEnum = pgEnum("activity_action", [
   "login",
@@ -61,6 +62,7 @@ export const users = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     username: text("username").notNull(),
     phone: text("phone"),
+    email: text("email"),
     passwordHash: text("password_hash").notNull(),
     role: userRoleEnum("role").notNull().default("user"),
     status: userStatusEnum("status").notNull().default("active"),
@@ -82,6 +84,7 @@ export const users = pgTable(
   (table) => [
     uniqueIndex("users_username_unique").on(table.username),
     uniqueIndex("users_phone_unique").on(table.phone),
+    uniqueIndex("users_email_unique").on(table.email),
     index("users_role_idx").on(table.role),
   ]
 );
@@ -350,25 +353,46 @@ export const fileVersions = pgTable(
   ]
 );
 
-export const whatsappSenders = pgTable(
-  "whatsapp_senders",
+/**
+ * Gmail SMTP senders used to deliver OTP and security notifications. Each row is
+ * a Gmail account + an App Password (stored ENCRYPTED, never plaintext — see
+ * lib/email/crypto.ts). Multiple senders enable priority-ordered failover.
+ */
+export const mailSenders = pgTable(
+  "mail_senders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    phoneNumber: text("phone_number").notNull(),
+    email: text("email").notNull(),
+    /** AES-256-GCM ciphertext of the Gmail App Password (see lib/email/crypto.ts). */
+    appPasswordEncrypted: text("app_password_encrypted").notNull(),
     displayName: text("display_name").notNull(),
-    status: waStatusEnum("status").notNull().default("disconnected"),
+    /** Friendly From name shown to recipients, e.g. "Storage ByAFR". */
+    fromName: text("from_name").notNull().default("Storage ByAFR"),
+    status: mailStatusEnum("status").notNull().default("unverified"),
     isActive: boolean("is_active").notNull().default(true),
-    sessionData: jsonb("session_data").$type<Record<string, unknown>>(),
-    lastConnectedAt: timestamp("last_connected_at", { withTimezone: true }),
-    errorMessage: text("error_message"),
+    lastError: text("last_error"),
+    lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
     priority: integer("priority").notNull().default(0),
+    // ── Smart-router state ──────────────────────────────────────────────────
+    /** Max messages this sender may send per rolling day (0 = use global default). */
+    dailyLimit: integer("daily_limit").notNull().default(0),
+    /** Messages sent in the current day window (reset when sentCountResetAt passes). */
+    dailySentCount: integer("daily_sent_count").notNull().default(0),
+    /** When the daily counter was last reset — the window is 24h from here. */
+    sentCountResetAt: timestamp("sent_count_reset_at", { withTimezone: true }),
+    /** Last time this sender successfully sent — drives least-recently-used rotation. */
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** Consecutive send failures; resets to 0 on any success. Feeds the cooldown. */
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    /** When set and in the future, the router skips this sender (temporary rest). */
+    cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("wa_senders_phone_unique").on(table.phoneNumber),
-    index("wa_senders_status_idx").on(table.status),
-    index("wa_senders_active_idx").on(table.isActive),
+    uniqueIndex("mail_senders_email_unique").on(table.email),
+    index("mail_senders_status_idx").on(table.status),
+    index("mail_senders_active_idx").on(table.isActive),
   ]
 );
 
@@ -376,7 +400,10 @@ export const otpTokens = pgTable(
   "otp_tokens",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    phoneNumber: text("phone_number").notNull(),
+    /** Legacy OTP-by-phone target; retained nullable until migration 0005 drops it. */
+    phoneNumber: text("phone_number"),
+    /** Email OTP target (primary channel). */
+    email: text("email"),
     code: text("code").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     verified: boolean("verified").notNull().default(false),
@@ -385,28 +412,8 @@ export const otpTokens = pgTable(
   },
   (table) => [
     index("otp_tokens_phone_idx").on(table.phoneNumber),
+    index("otp_tokens_email_idx").on(table.email),
     index("otp_tokens_expires_idx").on(table.expiresAt),
-  ]
-);
-
-/**
- * Pairing handshake for WhatsApp registration. The user is shown `code` in the
- * browser and must reply with it to the sender, proving they control both the
- * browser session and the WhatsApp number before any OTP is issued.
- */
-export const waPairings = pgTable(
-  "wa_pairings",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    phoneNumber: text("phone_number").notNull(),
-    code: text("code").notNull(),
-    verified: boolean("verified").notNull().default(false),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("wa_pairings_phone_idx").on(table.phoneNumber),
-    index("wa_pairings_expires_idx").on(table.expiresAt),
   ]
 );
 
@@ -501,6 +508,6 @@ export type Session = typeof sessions.$inferSelect;
 export type Folder = typeof folders.$inferSelect;
 export type File = typeof files.$inferSelect;
 export type ActivityLog = typeof activityLogs.$inferSelect;
-export type WhatsappSender = typeof whatsappSenders.$inferSelect;
+export type MailSender = typeof mailSenders.$inferSelect;
+export type NewMailSender = typeof mailSenders.$inferInsert;
 export type OtpToken = typeof otpTokens.$inferSelect;
-export type WaPairing = typeof waPairings.$inferSelect;

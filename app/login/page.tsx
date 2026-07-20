@@ -54,7 +54,7 @@ export default function LoginPage() {
         : { identifier, password };
 
       const res = await apiFetch<{
-        user?: unknown;
+        user?: { role?: string };
         requires2fa?: boolean;
         pendingToken?: string;
         mustChangePassword?: boolean;
@@ -91,7 +91,9 @@ export default function LoginPage() {
       }
 
       const next = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
-      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+      // Master accounts land on the System Overview; regular users on their dashboard.
+      const home = res.data?.user?.role === "master" ? "/admin" : "/dashboard";
+      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : home;
       router.push(safeNext);
       router.refresh();
     } catch {
@@ -157,12 +159,12 @@ export default function LoginPage() {
               <>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-foreground/80">
-                    Username / WhatsApp number
+                    Username / Email
                   </label>
                   <Input
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="Username or 628xxxxxxxxxx"
+                    placeholder="Username or email"
                     autoComplete="username"
                     required
                     className="h-11"

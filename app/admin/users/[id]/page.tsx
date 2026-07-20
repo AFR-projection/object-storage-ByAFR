@@ -22,7 +22,7 @@ interface UserDetail {
   user: {
     id: string;
     username: string;
-    phone: string | null;
+    email: string | null;
     role: string;
     status: string;
     quotaBytes: number;
@@ -91,7 +91,7 @@ export default function UserDetailPage({
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     username: "",
-    phone: "",
+    email: "",
     password: "",
     quotaGB: 10,
     bandwidthGB: 0,
@@ -145,7 +145,8 @@ export default function UserDetailPage({
     try {
       const body: Record<string, unknown> = {
         username: form.username || undefined,
-        phone: form.phone || undefined,
+        // Send null (not undefined) so clearing the field actually removes the email.
+        email: form.email.trim() || null,
         quotaBytes: form.quotaGB * 1073741824,
         bandwidthQuotaBytes: form.bandwidthGB * 1073741824,
         mustChangePassword: form.mustChangePassword,
@@ -184,7 +185,7 @@ export default function UserDetailPage({
         </Button>
         <div className="flex-1">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{user.username}</h1>
-          <p className="mt-1 text-sm text-muted-foreground/70">{user.phone ?? "No WhatsApp number"}</p>
+          <p className="mt-1 text-sm text-muted-foreground/70">{user.email ?? "No email"}</p>
         </div>
         <div className="flex items-center gap-2">
           <span
@@ -212,7 +213,7 @@ export default function UserDetailPage({
               } else {
                 setForm({
                   username: user.username,
-                  phone: user.phone ?? "",
+                  email: user.email ?? "",
                   password: "",
                   quotaGB: Math.round(user.quotaBytes / 1073741824),
                   bandwidthGB: Math.round((user.bandwidthQuotaBytes ?? 0) / 1073741824),
@@ -542,11 +543,11 @@ export default function UserDetailPage({
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-foreground/80">WhatsApp number</label>
+                    <label className="mb-1.5 block text-sm font-medium text-foreground/80">Email</label>
                     <Input
-                      value={form.phone}
-                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                      placeholder="WhatsApp number (optional, e.g. 628xxx)"
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      placeholder="Email (optional)"
                     />
                   </div>
                 </div>

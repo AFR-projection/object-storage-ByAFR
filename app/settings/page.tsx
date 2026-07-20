@@ -21,7 +21,7 @@ interface SessionUser {
   role: string;
   quotaBytes: number;
   usedBytes: number;
-  phone?: string | null;
+  email?: string | null;
   totpEnabled?: boolean;
   sessionId?: string;
 }
@@ -196,8 +196,8 @@ function ProfileSection({ user }: { user: SessionUser }) {
         <p className="mt-0.5 text-sm font-medium">{user.username}</p>
       </div>
       <div className="rounded-lg bg-surface-hover/50 p-4">
-        <label className="text-xs font-medium text-muted-foreground/70">WhatsApp number</label>
-        <p className="mt-0.5 text-sm font-medium">{user.phone ?? "Not set"}</p>
+        <label className="text-xs font-medium text-muted-foreground/70">Email</label>
+        <p className="mt-0.5 text-sm font-medium">{user.email ?? "Not set"}</p>
       </div>
       <div className="rounded-lg bg-surface-hover/50 p-4">
         <label className="text-xs font-medium text-muted-foreground/70">Role</label>

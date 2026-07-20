@@ -193,7 +193,7 @@ export function buildConnectManifest(fallbackOrigin?: string): ConnectManifest {
         "admin:stats",
         "admin:monitoring",
         "admin:shares",
-        "admin:whatsapp",
+        "admin:email",
       ],
     },
     mcp: {

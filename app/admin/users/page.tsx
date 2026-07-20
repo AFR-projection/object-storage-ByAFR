@@ -30,7 +30,7 @@ import {
 interface AdminUser {
   id: string;
   username: string;
-  phone: string | null;
+  email: string | null;
   role: string;
   status: string;
   suspendReason?: string | null;
@@ -49,14 +49,14 @@ export default function AdminUsersPage() {
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [editForm, setEditForm] = useState({
     username: "",
-    phone: "",
+    email: "",
     password: "",
     quotaGB: 10,
     mustChangePassword: false,
     bandwidthQuotaGB: 0,
   });
   const [searchTerm, setSearchTerm] = useState("");
-  const [form, setForm] = useState({ username: "", phone: "", password: "", quotaGB: 10 });
+  const [form, setForm] = useState({ username: "", email: "", password: "", quotaGB: 10 });
   const [formError, setFormError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
@@ -81,7 +81,7 @@ export default function AdminUsersPage() {
   const filtered = (users ?? []).filter(
     (u) =>
       u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.phone && u.phone.toLowerCase().includes(searchTerm.toLowerCase()))
+      (u.email && u.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   function ok(msg: string) {
@@ -99,7 +99,7 @@ export default function AdminUsersPage() {
         method: "POST",
         body: JSON.stringify({
           username: form.username,
-          phone: form.phone || undefined,
+          email: form.email || undefined,
           password: form.password,
           quotaBytes: form.quotaGB * 1073741824,
         }),
@@ -109,7 +109,7 @@ export default function AdminUsersPage() {
         return;
       }
       setShowCreate(false);
-      setForm({ username: "", phone: "", password: "", quotaGB: 10 });
+      setForm({ username: "", email: "", password: "", quotaGB: 10 });
       ok("User created successfully");
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     } catch {
@@ -201,7 +201,7 @@ export default function AdminUsersPage() {
     setEditingUser(user);
     setEditForm({
       username: user.username,
-      phone: user.phone ?? "",
+      email: user.email ?? "",
       password: "",
       quotaGB: Math.round(user.quotaBytes / 1073741824),
       mustChangePassword: !!user.mustChangePassword,
@@ -216,7 +216,8 @@ export default function AdminUsersPage() {
       const body: Record<string, unknown> = {
         id: editingUser.id,
         username: editForm.username || undefined,
-        phone: editForm.phone || undefined,
+        // null (not undefined) so clearing the field removes the email.
+        email: editForm.email.trim() || null,
         quotaBytes: editForm.quotaGB * 1073741824,
         mustChangePassword: editForm.mustChangePassword,
         bandwidthQuotaBytes: editForm.bandwidthQuotaGB * 1073741824,
@@ -304,9 +305,9 @@ export default function AdminUsersPage() {
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
                 />
                 <Input
-                  placeholder="WhatsApp number (optional, e.g. 628xxx)"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="Email (optional)"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
                 <Input
                   type="password"
@@ -369,7 +370,7 @@ export default function AdminUsersPage() {
                     </div>
                     <div>
                       <p className="font-semibold text-sm">{user.username}</p>
-                      <p className="text-xs text-muted-foreground">{user.phone ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">{user.email ?? "—"}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -387,7 +388,7 @@ export default function AdminUsersPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate">{user.username}</p>
-                    <p className="text-xs text-muted-foreground truncate">{user.phone ?? "—"}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user.email ?? "—"}</p>
                   </div>
                 </div>
 
@@ -492,11 +493,11 @@ export default function AdminUsersPage() {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground/80">WhatsApp number</label>
+                <label className="mb-1.5 block text-sm font-medium text-foreground/80">Email</label>
                 <Input
-                  value={editForm.phone}
-                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                  placeholder="WhatsApp number (optional, e.g. 628xxx)"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  placeholder="Email (optional)"
                 />
               </div>
               <div>

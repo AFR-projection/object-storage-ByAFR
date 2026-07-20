@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -9,8 +9,6 @@ import {
   HardDrive,
   FileWarning,
   Sliders,
-  Server,
-  RefreshCw,
   Eye,
   EyeOff,
   Loader2,
@@ -20,11 +18,11 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertCircle,
-  ChevronDown,
   Users,
+  Mail,
+  Search,
 } from "lucide-react";
 import type { AdminSettings } from "@/app/api/admin/settings/route";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
@@ -115,6 +113,18 @@ const SETTING_SECTIONS: Section[] = [
       { key: "logRetentionDays", label: "Log Retention", description: "How long to keep activity logs (cleaned hourly by the worker)", type: "number", unit: "days", min: 7, max: 730 },
     ],
   },
+  {
+    id: "email",
+    title: "Email Delivery",
+    description: "Smart Gmail sender router — limits, failover and cooldown",
+    icon: Mail,
+    gradient: "from-rose-500 to-pink-500",
+    fields: [
+      { key: "emailDailyLimitPerSender", label: "Daily Limit per Sender", description: "Default max emails a Gmail sender may send per day before the router rotates to another. Gmail's own cap is ~500/day.", type: "number", unit: "emails/day", min: 1, max: 2000 },
+      { key: "emailFailureThreshold", label: "Failure Threshold", description: "Consecutive send failures before a sender is rested (put on cooldown)", type: "number", unit: "failures", min: 1, max: 20 },
+      { key: "emailCooldownMinutes", label: "Cooldown Duration", description: "How long a sender rests after hitting the failure threshold, then it's retried automatically", type: "number", unit: "minutes", min: 1, max: 1440 },
+    ],
+  },
 ];
 
 // ─── Tags Input ───────────────────────────────────────────────────────────────
@@ -158,11 +168,10 @@ function TagsInput({ value, onChange, placeholder }: { value: string[]; onChange
 
 // ─── Settings Field ───────────────────────────────────────────────────────────
 
-function SettingsField({ field, value, onChange, meta }: {
+function SettingsField({ field, value, onChange }: {
   field: SettingField;
   value: unknown;
   onChange: (v: unknown) => void;
-  meta?: { totalUsers?: number };
 }) {
   const [showSensitive, setShowSensitive] = useState(false);
 
@@ -281,65 +290,6 @@ function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boole
   );
 }
 
-function SettingsSection({ section, values, onChange, isOpen, onToggle, index }: {
-  section: Section;
-  values: AdminSettings;
-  onChange: (key: keyof AdminSettings, value: unknown) => void;
-  isOpen: boolean;
-  onToggle: () => void;
-  index: number;
-}) {
-  const Icon = section.icon;
-
-  return (
-    <motion.div
-      layout
-      className="rounded-2xl border border-border/50 bg-surface/80 backdrop-blur-sm overflow-hidden hover:border-accent/20 transition-all duration-300"
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-accent/5"
-      >
-        <div className="flex items-center gap-3">
-          <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br", section.gradient)}>
-            <Icon className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h3 className="text-base font-semibold">{section.title}</h3>
-            <p className="text-xs text-muted-foreground/60">{section.description}</p>
-          </div>
-        </div>
-        <ChevronDown className={cn("h-5 w-5 text-muted-foreground/40 transition-transform duration-200", isOpen && "rotate-180")} />
-      </button>
-
-      <AnimatePresence initial={false}>
-        {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-border/30 px-6 py-5 space-y-5">
-              {section.fields.map((field) => (
-                <div key={field.key as string}>
-                  <SettingsField
-                    field={field}
-                    value={values[field.key]}
-                    onChange={(v) => onChange(field.key, v)}
-                  />
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
 // ─── Loading Skeleton ─────────────────────────────────────────────────────────
 
 function SettingsSkeleton() {
@@ -363,7 +313,9 @@ const sections = SETTING_SECTIONS;
 export default function AdminSettingsPage() {
   const queryClient = useQueryClient();
   const [values, setValues] = useState<AdminSettings | null>(null);
-  const [openSection, setOpenSection] = useState("general");
+  const [baseline, setBaseline] = useState<AdminSettings | null>(null);
+  const [activeSection, setActiveSection] = useState("general");
+  const [search, setSearch] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -379,6 +331,7 @@ export default function AdminSettingsPage() {
     if (data && !values) {
       const { _meta: _, ...settings } = data as AdminSettings & { _meta?: unknown };
       setValues(settings as AdminSettings);
+      setBaseline(settings as AdminSettings);
     }
   }, [data, values]);
 
@@ -391,9 +344,10 @@ export default function AdminSettingsPage() {
       if (!res.success) throw new Error(res.error ?? "Failed to save settings");
       return res.data;
     },
-    onSuccess: () => {
-      setSuccessMsg("Settings saved to database — takes effect within ~30 seconds");
+    onSuccess: (saved) => {
+      setSuccessMsg("Settings saved — changes take effect within ~30 seconds");
       setTimeout(() => setSuccessMsg(""), 4000);
+      if (saved) setBaseline(saved as AdminSettings);
       queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
     },
     onError: (err) => {
@@ -403,149 +357,280 @@ export default function AdminSettingsPage() {
   });
 
   function handleChange(key: keyof AdminSettings, value: unknown) {
-    setValues((prev) => prev ? { ...prev, [key]: value } : prev);
+    setValues((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
 
   function handleReset() {
-    setValues(null);
-    queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+    if (baseline) setValues(baseline);
   }
+
+  // Which fields differ from the last-saved baseline? Drives the dirty indicator
+  // and the per-section "unsaved" dots.
+  const dirtyKeys = useMemo(() => {
+    if (!values || !baseline) return new Set<string>();
+    const keys = new Set<string>();
+    (Object.keys(values) as (keyof AdminSettings)[]).forEach((k) => {
+      if (JSON.stringify(values[k]) !== JSON.stringify(baseline[k])) keys.add(k as string);
+    });
+    return keys;
+  }, [values, baseline]);
+  const isDirty = dirtyKeys.size > 0;
+
+  // Search filters the visible fields; when searching we show all matching
+  // sections flattened rather than the single active section.
+  const query = search.trim().toLowerCase();
+  const filteredSections = useMemo(() => {
+    if (!query) return sections;
+    return sections
+      .map((s) => ({
+        ...s,
+        fields: s.fields.filter(
+          (f) =>
+            f.label.toLowerCase().includes(query) ||
+            f.description.toLowerCase().includes(query) ||
+            s.title.toLowerCase().includes(query)
+        ),
+      }))
+      .filter((s) => s.fields.length > 0);
+  }, [query]);
+
+  const visibleSections = query
+    ? filteredSections
+    : filteredSections.filter((s) => s.id === activeSection);
 
   if (isLoading && !values) return <SettingsSkeleton />;
 
   const meta = data?._meta as { totalUsers?: number } | undefined;
 
   return (
-    <div>
+    <div className="pb-28">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
-      >
-        <div className="flex items-center gap-3 mb-1">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent/10">
-            <Sliders className="h-5 w-5 text-accent" />
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent/60 shadow-lg shadow-accent/20">
+            <Sliders className="h-5 w-5 text-white" />
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Settings</h1>
             <p className="text-sm text-muted-foreground/60">
-              Saved to database — takes effect within ~30 seconds
+              Platform configuration · saved to database, applied within ~30 seconds
             </p>
           </div>
         </div>
       </motion.div>
 
-      {/* System Info Bar */}
+      {/* System info bar */}
       <motion.div
         initial={{ opacity: 0, y: -4 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.06 }}
-        className="mb-6 flex flex-wrap items-center gap-4 rounded-2xl border border-border/40 bg-accent/5 px-5 py-3"
+        transition={{ delay: 0.05 }}
+        className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-border/40 bg-surface/60 px-5 py-3 text-xs text-muted-foreground"
       >
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Server className="h-3.5 w-3.5 text-accent" />
-          <span className="font-medium">System Health:</span>
-          <span className="inline-flex items-center gap-1 text-emerald-500">
-            <span className="size-1.5 rounded-full bg-emerald-500" /> Online
-          </span>
-        </div>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          <span className="font-medium text-foreground/80">System online</span>
+        </span>
         {meta?.totalUsers !== undefined && (
-          <>
-            <span className="hidden sm:inline text-muted-foreground/30">|</span>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Users className="h-3.5 w-3.5" />
-              <span>{meta.totalUsers} users</span>
-            </div>
-          </>
+          <span className="inline-flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5" /> {meta.totalUsers} users
+          </span>
         )}
-        <span className="hidden sm:inline text-muted-foreground/30">|</span>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <RefreshCw className="h-3.5 w-3.5" />
-          Changes take effect immediately
-        </div>
         {values?.maintenanceMode && (
-          <>
-            <span className="text-muted-foreground/30">|</span>
-            <div className="flex items-center gap-1.5 text-xs text-amber-500">
-              <AlertCircle className="h-3.5 w-3.5" />
-              Maintenance mode active
-            </div>
-          </>
+          <span className="inline-flex items-center gap-1.5 text-amber-500">
+            <AlertCircle className="h-3.5 w-3.5" /> Maintenance mode active
+          </span>
         )}
+        <span className="inline-flex w-full items-center gap-1.5 sm:ml-auto sm:w-auto">
+          {isDirty ? (
+            <span className="inline-flex items-center gap-1.5 text-amber-500">
+              <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+              {dirtyKeys.size} unsaved change{dirtyKeys.size > 1 ? "s" : ""}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-emerald-500">
+              <CheckCircle2 className="h-3.5 w-3.5" /> All changes saved
+            </span>
+          )}
+        </span>
       </motion.div>
 
-      {/* Messages */}
-      <AnimatePresence>
-        {successMsg && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400"
+      {/* Search */}
+      <div className="relative mb-6 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search settings…"
+          className="h-10 pl-9"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground"
+            aria-label="Clear search"
           >
-            <CheckCircle2 className="h-4 w-4 shrink-0" /> {successMsg}
-          </motion.div>
+            <X className="h-4 w-4" />
+          </button>
         )}
-        {errorMsg && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500"
-          >
-            <AlertCircle className="h-4 w-4 shrink-0" /> {errorMsg}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </div>
 
-      {/* Settings Sections */}
       {values && (
-        <div className="space-y-3">
-          {sections.map((section, idx) => (
-            <motion.div
-              key={section.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.04 }}
-            >
-              <SettingsSection
-                section={section}
-                index={idx}
-                values={values}
-                onChange={handleChange}
-                isOpen={openSection === section.id}
-                onToggle={() => setOpenSection(openSection === section.id ? "" : section.id)}
-              />
-            </motion.div>
-          ))}
+        <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
+          {/* Section nav — horizontal scroll chips on mobile, sticky sidebar on desktop.
+              Hidden while searching (results are flattened across sections). */}
+          {!query && (
+            <nav>
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 no-scrollbar lg:sticky lg:top-4 lg:mx-0 lg:flex-col lg:gap-0 lg:space-y-1 lg:overflow-visible lg:px-0 lg:pb-0">
+                {sections.map((section) => {
+                  const Icon = section.icon;
+                  const active = section.id === activeSection;
+                  const sectionDirty = section.fields.some((f) => dirtyKeys.has(f.key as string));
+                  return (
+                    <button
+                      key={section.id}
+                      onClick={() => setActiveSection(section.id)}
+                      className={cn(
+                        "flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl border px-3 py-2.5 text-left text-sm transition-colors lg:w-full lg:border-transparent",
+                        active
+                          ? "border-accent/30 bg-accent/10 font-medium text-accent lg:border-transparent"
+                          : "border-border/40 text-muted-foreground hover:bg-accent/5 hover:text-foreground"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br",
+                          section.gradient
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5 text-white" />
+                      </div>
+                      <span className="flex-1 truncate">{section.title}</span>
+                      {sectionDirty && <span className="size-1.5 rounded-full bg-amber-500" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
+          )}
+
+          {/* Content */}
+          <div className="space-y-6">
+            <AnimatePresence>
+              {successMsg && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400"
+                >
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {successMsg}
+                </motion.div>
+              )}
+              {errorMsg && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500"
+                >
+                  <AlertCircle className="h-4 w-4 shrink-0" /> {errorMsg}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {visibleSections.length === 0 && (
+              <div className="rounded-2xl border border-border/40 bg-surface/50 py-16 text-center text-sm text-muted-foreground">
+                No settings match “{search}”.
+              </div>
+            )}
+
+            {visibleSections.map((section) => {
+              const Icon = section.icon;
+              return (
+                <motion.div
+                  key={section.id}
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="overflow-hidden rounded-2xl border border-border/50 bg-surface/80 backdrop-blur-sm"
+                >
+                  <div className="flex items-center gap-3 border-b border-border/30 px-6 py-4">
+                    <div
+                      className={cn(
+                        "flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br",
+                        section.gradient
+                      )}
+                    >
+                      <Icon className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold">{section.title}</h3>
+                      <p className="text-xs text-muted-foreground/60">{section.description}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-5 px-6 py-5">
+                    {section.fields.map((field) => (
+                      <div
+                        key={field.key as string}
+                        className={cn(
+                          "rounded-xl transition-colors",
+                          dirtyKeys.has(field.key as string) && "-mx-2 bg-amber-500/[0.04] px-2 py-2"
+                        )}
+                      >
+                        <SettingsField
+                          field={field}
+                          value={values[field.key]}
+                          onChange={(v) => handleChange(field.key, v)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Action Buttons */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="mt-8 flex flex-wrap items-center gap-3"
-      >
-        <Button
-          onClick={() => values && saveMutation.mutate(values)}
-          disabled={saveMutation.isPending}
-          className="gap-2 min-h-[44px]"
-        >
-          {saveMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
-          Save Changes
-        </Button>
-        <Button variant="secondary" onClick={handleReset} disabled={saveMutation.isPending} className="gap-2 min-h-[44px]">
-          <RotateCcw className="h-4 w-4" />
-          Reset
-        </Button>
-      </motion.div>
+      {/* Sticky action bar */}
+      <AnimatePresence>
+        {isDirty && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-[calc(100%-2rem)] max-w-lg items-center justify-between gap-4 rounded-2xl border border-border/60 bg-surface/95 px-5 py-3 shadow-2xl backdrop-blur-xl"
+          >
+            <span className="text-sm text-muted-foreground">
+              {dirtyKeys.size} unsaved change{dirtyKeys.size > 1 ? "s" : ""}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleReset}
+                disabled={saveMutation.isPending}
+                className="gap-1.5"
+              >
+                <RotateCcw className="h-4 w-4" /> Discard
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => values && saveMutation.mutate(values)}
+                disabled={saveMutation.isPending}
+                className="gap-1.5"
+              >
+                {saveMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Save changes
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -14,7 +14,7 @@ export const MASTER_API_ENDPOINTS = [
   { method: "GET", path: "/api/admin/monitoring", scope: "admin:monitoring", description: "System monitoring data" },
   { method: "GET", path: "/api/admin/shares", scope: "admin:shares", description: "All share links" },
   { method: "DELETE", path: "/api/admin/shares", scope: "admin:shares", description: "Revoke share links" },
-  { method: "GET", path: "/api/admin/whatsapp/senders", scope: "admin:whatsapp", description: "WhatsApp senders" },
+  { method: "GET", path: "/api/admin/email/senders", scope: "admin:email", description: "Gmail senders" },
   { method: "GET", path: "/api/files", scope: "full", description: "List all accessible files" },
   { method: "GET", path: "/api/search", scope: "read", description: "Search files platform-wide" },
 ] as const;

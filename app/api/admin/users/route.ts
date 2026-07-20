@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
 const createUserSchema = z.object({
   username: z.string().min(3).max(50),
-  phone: z.string().min(10).max(15).regex(/^\d+$/, "Phone must be digits only").optional(),
+  email: z.string().email().max(254).optional(),
   password: z.string().min(8),
   role: z.enum(["user"]).default("user"),
   quotaBytes: z.number().int().positive().optional(),
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       .insert(users)
       .values({
         username: body.username,
-        phone: body.phone ?? null,
+        email: body.email ? body.email.toLowerCase() : null,
         passwordHash,
         role: body.role,
         quotaBytes,
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
 const updateUserSchema = z.object({
   id: z.string().uuid(),
   username: z.string().min(3).optional(),
-  phone: z.string().min(10).max(15).regex(/^\d+$/, "Phone must be digits only").nullable().optional(),
+  email: z.string().email().max(254).nullable().optional(),
   password: z.string().min(8).optional(),
   status: z.enum(["active", "suspended"]).optional(),
   suspendReason: z.string().max(500).nullable().optional(),
@@ -125,7 +125,7 @@ export async function PATCH(request: NextRequest) {
 
     const updates: Partial<typeof existing> = { updatedAt: new Date() };
     if (body.username) updates.username = body.username;
-    if (body.phone !== undefined) updates.phone = body.phone;
+    if (body.email !== undefined) updates.email = body.email ? body.email.toLowerCase() : null;
     if (body.status) {
       updates.status = body.status;
       if (body.status === "active") {

@@ -152,7 +152,9 @@ function SidebarInner({
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3 pt-2">
-        {navItems.map(({ href, label, icon: Icon }, idx) => {
+        {navItems
+          .filter((item) => !(user.role === "master" && item.href === "/dashboard"))
+          .map(({ href, label, icon: Icon }, idx) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <motion.div
@@ -166,7 +168,7 @@ function SidebarInner({
                 onClick={handleNav}
                 className={cn(
                   "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[40px]",
-                  active ? "text-white" : "text-muted-foreground hover:text-foreground"
+                  active ? "text-accent" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 {active && (
@@ -201,7 +203,7 @@ function SidebarInner({
               onClick={handleNav}
               className={cn(
                 "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[40px]",
-                pathname === "/settings" ? "text-white" : "text-muted-foreground hover:text-foreground"
+                pathname === "/settings" ? "text-accent" : "text-muted-foreground hover:text-foreground"
               )}
             >
               {pathname === "/settings" && (
@@ -228,7 +230,7 @@ function SidebarInner({
               onClick={handleNav}
               className={cn(
                 "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[40px]",
-                pathname.startsWith("/admin") ? "text-white" : "text-muted-foreground hover:text-foreground"
+                pathname.startsWith("/admin") ? "text-accent" : "text-muted-foreground hover:text-foreground"
               )}
             >
               {pathname.startsWith("/admin") && (

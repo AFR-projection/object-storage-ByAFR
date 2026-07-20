@@ -17,14 +17,11 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV WA_SESSIONS_DIR=/app/wa-sessions
 
-# su-exec: drop root → nextjs after fixing volume permissions in entrypoint
+# su-exec: drop root → nextjs after any first-run setup in the entrypoint
 RUN apk add --no-cache su-exec \
   && addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 nextjs \
-  && mkdir -p /app/wa-sessions \
-  && chown -R nextjs:nodejs /app/wa-sessions
+  && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

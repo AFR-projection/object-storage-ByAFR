@@ -75,7 +75,7 @@ export function ConnectionEndpointsPanel({ baseUrl }: ConnectionEndpointsPanelPr
               Do not use <code className="text-foreground/80">/connect</code> or{" "}
               <code className="text-foreground/80">/openapi</code> in that field.
             </p>
-            <code className="block break-all rounded-xl bg-black/35 px-4 py-3 text-sm font-mono text-emerald-300/95 ring-1 ring-violet-500/25">
+            <code className="block break-all rounded-xl bg-neutral-900 px-4 py-3 text-sm font-mono text-emerald-300/95 ring-1 ring-violet-500/25">
               {mcpUrl}
             </code>
           </div>

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { users, files, folders, activityLogs, shares, sessions } from "@/lib/db/schema";
 import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
+import { getRedis } from "@/lib/cache/redis";
 
 export async function GET(request: NextRequest) {
   try {
@@ -172,6 +173,41 @@ export async function GET(request: NextRequest) {
       ...v,
     }));
 
+    // ── System health ──────────────────────────────────────────────────────
+    // The DB is reachable (every query above just succeeded). Probe Redis with a
+    // bounded PING so a dead cache is reported rather than hanging the request.
+    let redisStatus: "connected" | "disabled" | "down" = "disabled";
+    if (process.env.REDIS_DISABLED !== "true") {
+      const client = getRedis();
+      if (client) {
+        try {
+          const pong = await Promise.race([
+            (async () => {
+              if (client.status !== "ready") await client.connect();
+              return client.ping();
+            })(),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+          ]);
+          redisStatus = pong === "PONG" ? "connected" : "down";
+        } catch {
+          redisStatus = "down";
+        }
+      } else {
+        redisStatus = "down";
+      }
+    }
+
+    const mem = process.memoryUsage();
+    const system = {
+      database: "connected" as const,
+      redis: redisStatus,
+      uptimeSeconds: Math.floor(process.uptime()),
+      nodeVersion: process.version,
+      memoryUsedMB: Math.round(mem.rss / 1024 / 1024),
+      memoryHeapMB: Math.round(mem.heapUsed / 1024 / 1024),
+      env: process.env.NODE_ENV ?? "development",
+    };
+
     return apiSuccess({
       users: {
         total: userCount.total,
@@ -200,6 +236,7 @@ export async function GET(request: NextRequest) {
       storageGrowth,
       byMime,
       byCategory,
+      system,
     });
   } catch (error) {
     return handleApiError(error);

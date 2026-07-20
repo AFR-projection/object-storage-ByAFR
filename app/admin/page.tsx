@@ -10,7 +10,7 @@ import { formatBytes, formatDate } from "@/lib/utils";
 import {
   Users, FileText, HardDrive, Share2, Activity, Upload,
   Download, FolderOpen, Clock, Shield, TrendingUp, AlertCircle,
-  CheckCircle, XCircle, BarChart3, Zap, Database, Server,
+  CheckCircle, XCircle, BarChart3, Zap, Database, Server, Cpu,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -47,6 +47,15 @@ interface AdminStats {
   storageGrowth?: Array<{ day: string; uploads: number; bytes: number }>;
   byMime?: Array<{ mimeType: string; category: string; count: number; bytes: number }>;
   byCategory?: Array<{ category: string; count: number; bytes: number }>;
+  system?: {
+    database: string;
+    redis: "connected" | "disabled" | "down";
+    uptimeSeconds: number;
+    nodeVersion: string;
+    memoryUsedMB: number;
+    memoryHeapMB: number;
+    env: string;
+  };
 }
 
 const actionIcons: Record<string, typeof Upload> = {
@@ -71,7 +80,10 @@ const actionColors: Record<string, string> = {
   impersonate: "bg-orange-500/10 text-orange-500",
 };
 
-const MIME_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444", "#64748b"];
+// Categorical palette — validated colorblind-safe (ΔE) in both light & dark,
+// contrast ≥ 3:1 vs surface. Paired with a legend + direct labels (identity is
+// never color-alone). Do not reorder: colors follow entity slots, not rank.
+const MIME_COLORS = ["#059669", "#2563eb", "#d97706", "#7c3aed", "#dc2626", "#0891b2"];
 
 export default function AdminOverviewPage() {
   const { data: stats, isLoading } = useQuery({
@@ -80,7 +92,7 @@ export default function AdminOverviewPage() {
       const res = await apiFetch<AdminStats>("/api/admin/stats");
       return res.data;
     },
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    refetchInterval: 15000, // Live — auto-refresh every 15 seconds
   });
 
   if (isLoading) {
@@ -105,8 +117,11 @@ export default function AdminOverviewPage() {
         title="System Overview"
         subtitle="Real-time platform statistics and health monitoring"
         live
-        liveLabel="Live • auto-refreshes every 30s"
+        liveLabel="Live • auto-refreshes every 15s"
       />
+
+      {/* System Health */}
+      {stats?.system && <SystemHealth system={stats.system} />}
 
       {/* Primary Stats */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -235,32 +250,50 @@ export default function AdminOverviewPage() {
               {(stats?.storageGrowth?.length ?? 0) > 0 ? (
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={stats!.storageGrowth}>
+                    <AreaChart data={stats!.storageGrowth} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
                       <defs>
                         <linearGradient id="uploadFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.35} />
-                          <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0} />
+                          <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.28} />
+                          <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-border/40" />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="var(--border)"
+                        vertical={false}
+                      />
                       <XAxis
                         dataKey="day"
-                        tickFormatter={(v) => String(v).slice(5)}
-                        tick={{ fontSize: 10 }}
-                        className="text-muted-foreground"
+                        tickFormatter={formatChartDay}
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        tickLine={false}
+                        axisLine={{ stroke: "var(--border)" }}
+                        minTickGap={24}
                       />
-                      <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        tickLine={false}
+                        axisLine={false}
+                        allowDecimals={false}
+                        width={32}
+                      />
                       <Tooltip
-                        contentStyle={{ borderRadius: 12, border: "1px solid hsl(var(--border))" }}
-                        formatter={(value) => [Number(value), "Uploads"]}
-                        labelFormatter={(l) => String(l)}
+                        cursor={{ stroke: "var(--accent)", strokeWidth: 1, strokeDasharray: "4 4" }}
+                        content={<UploadTooltip />}
                       />
                       <Area
                         type="monotone"
                         dataKey="uploads"
-                        stroke="hsl(var(--accent))"
+                        stroke="var(--accent)"
                         fill="url(#uploadFill)"
-                        strokeWidth={2}
+                        strokeWidth={2.5}
+                        dot={false}
+                        activeDot={{
+                          r: 5,
+                          fill: "var(--accent)",
+                          stroke: "var(--surface)",
+                          strokeWidth: 2,
+                        }}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -299,13 +332,15 @@ export default function AdminOverviewPage() {
                           paddingAngle={2}
                         >
                           {stats!.byCategory!.map((_, i) => (
-                            <Cell key={i} fill={MIME_COLORS[i % MIME_COLORS.length]} />
+                            <Cell
+                              key={i}
+                              fill={MIME_COLORS[i % MIME_COLORS.length]}
+                              stroke="var(--surface)"
+                              strokeWidth={2}
+                            />
                           ))}
                         </Pie>
-                        <Tooltip
-                          formatter={(value) => formatBytes(Number(value))}
-                          contentStyle={{ borderRadius: 12, border: "1px solid hsl(var(--border))" }}
-                        />
+                        <Tooltip content={<CategoryTooltip />} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -481,6 +516,178 @@ export default function AdminOverviewPage() {
         </motion.div>
       )}
     </div>
+  );
+}
+
+/** "2026-07-13" → "Jul 13" for compact, readable axis ticks. */
+function formatChartDay(value: unknown): string {
+  const s = String(value);
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s.slice(5);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** Theme-aware tooltip — reads surface/border/ink tokens so it's legible in
+ *  both light and dark mode (the old Recharts default rendered white-on-white). */
+function UploadTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number }>;
+  label?: string | number;
+}) {
+  if (!active || !payload?.length) return null;
+  const value = payload[0]?.value ?? 0;
+  return (
+    <div
+      className="rounded-xl border px-3 py-2 shadow-lg"
+      style={{
+        background: "var(--surface-elevated)",
+        borderColor: "var(--border)",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+      }}
+    >
+      <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+        {formatChartDay(label)}
+      </p>
+      <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+        <span className="inline-block h-2 w-4 rounded-full" style={{ background: "var(--accent)" }} />
+        {value} upload{value === 1 ? "" : "s"}
+      </p>
+    </div>
+  );
+}
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/** Theme-aware tooltip for the storage-by-type pie. */
+function CategoryTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; payload?: { fill?: string } }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const item = payload[0];
+  return (
+    <div
+      className="rounded-xl border px-3 py-2 shadow-lg"
+      style={{
+        background: "var(--surface-elevated)",
+        borderColor: "var(--border)",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+      }}
+    >
+      <p className="flex items-center gap-1.5 text-sm font-semibold capitalize" style={{ color: "var(--foreground)" }}>
+        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: item.payload?.fill }} />
+        {item.name}
+      </p>
+      <p className="mt-0.5 text-xs" style={{ color: "var(--muted-foreground)" }}>
+        {formatBytes(Number(item.value ?? 0))}
+      </p>
+    </div>
+  );
+}
+
+function SystemHealth({ system }: { system: NonNullable<AdminStats["system"]> }) {
+  const services = [
+    {
+      label: "Database",
+      icon: Database,
+      ok: system.database === "connected",
+      neutral: false,
+      value: system.database === "connected" ? "Connected" : "Down",
+    },
+    {
+      label: "Cache (Redis)",
+      icon: Zap,
+      ok: system.redis === "connected",
+      neutral: system.redis === "disabled",
+      value:
+        system.redis === "connected" ? "Connected" : system.redis === "disabled" ? "Disabled" : "Down",
+    },
+    {
+      label: "Web Server",
+      icon: Server,
+      ok: true,
+      neutral: false,
+      value: `Up ${formatUptime(system.uptimeSeconds)}`,
+    },
+    {
+      label: "Memory",
+      icon: Cpu,
+      ok: true,
+      neutral: false,
+      value: `${system.memoryUsedMB} MB`,
+    },
+  ];
+
+  const allOk = services.every((s) => s.ok || s.neutral);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <Server className="h-4 w-4 text-muted-foreground" />
+              System Health
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                allOk ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"
+              }`}
+            >
+              <span
+                className={`size-1.5 rounded-full ${allOk ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}
+              />
+              {allOk ? "All systems operational" : "Attention needed"}
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {services.map((s) => {
+              const Icon = s.icon;
+              const tone = s.neutral
+                ? "text-muted-foreground"
+                : s.ok
+                  ? "text-emerald-500"
+                  : "text-red-500";
+              return (
+                <div
+                  key={s.label}
+                  className="flex items-center gap-3 rounded-xl border border-border/40 bg-surface/40 p-3"
+                >
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/40 ${tone}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground/70">{s.label}</p>
+                    <p className={`truncate text-sm font-semibold ${tone}`}>{s.value}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground/60">
+            <span>Node {system.nodeVersion}</span>
+            <span>Env: {system.env}</span>
+            <span>Heap: {system.memoryHeapMB} MB</span>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
 

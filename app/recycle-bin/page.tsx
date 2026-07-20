@@ -29,7 +29,7 @@ function getRelativeTime(ms: number): { label: string; color: string } {
   const days = Math.floor(hours / 24);
   if (days === 1) return { label: "Yesterday", color: "text-amber-400" };
   if (days < 7) return { label: `${days}d ago`, color: "text-amber-400" };
-  if (days < 30) return { label: `${Math.floor(days / 7)}w ago`, color: "text-yellow-400" };
+  if (days < 30) return { label: `${Math.floor(days / 7)}w ago`, color: "text-yellow-600 dark:text-yellow-400" };
   return { label: `${Math.floor(days / 30)}mo ago`, color: "text-muted-foreground/60" };
 }
 

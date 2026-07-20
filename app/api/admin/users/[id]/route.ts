@@ -120,13 +120,23 @@ export async function PATCH(
 
     const updates: Partial<typeof existing> = { updatedAt: new Date() };
     if (body.username) updates.username = body.username;
-    if (body.phone !== undefined) updates.phone = body.phone;
+    if (body.email !== undefined) {
+      const raw = body.email == null ? "" : String(body.email).trim().toLowerCase();
+      if (raw && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw)) {
+        return apiError("Please enter a valid email address.", 400);
+      }
+      updates.email = raw || null;
+    }
     if (body.status) {
       updates.status = body.status;
       if (body.status === "active") {
         updates.suspendReason = null;
-      } else if (body.status === "suspended" && body.suspendReason !== undefined) {
-        updates.suspendReason = body.suspendReason;
+      } else if (body.status === "suspended") {
+        // Always record a non-null reason for an admin suspension. A null reason is
+        // reserved for pending-email-verification accounts, so an admin-suspended
+        // user cannot self-reactivate via the email OTP flow.
+        updates.suspendReason =
+          body.suspendReason ?? existing.suspendReason ?? "Suspended by administrator";
       }
     }
     if (body.suspendReason !== undefined && !body.status) {

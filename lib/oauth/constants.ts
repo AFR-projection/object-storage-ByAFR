@@ -21,7 +21,7 @@ export const OAUTH_MASTER_SCOPES = [
   "admin:stats",
   "admin:monitoring",
   "admin:shares",
-  "admin:whatsapp",
+  "admin:email",
 ] as const;
 export type OAuthMasterScope = (typeof OAUTH_MASTER_SCOPES)[number];
 

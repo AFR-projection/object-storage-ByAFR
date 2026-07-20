@@ -1,49 +1,10 @@
 import { NextRequest } from "next/server";
-import { desc, eq, and, gte, count, isNull, ilike } from "drizzle-orm";
+import { desc, eq, and, isNull, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { activityLogs, users, files, activityActionEnum } from "@/lib/db/schema";
+import { activityLogs, users, activityActionEnum } from "@/lib/db/schema";
 import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
-
-export async function GET(request: NextRequest) {
-  try {
-    await requireMasterOrApiKey(request, "monitoring");
-
-    const [userCount] = await db.select({ total: count() }).from(users);
-    const [fileCount] = await db
-      .select({ total: count() })
-      .from(files)
-      .where(isNull(files.deletedAt));
-
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-    const [loginResult] = await db
-      .select({ count: count() })
-      .from(activityLogs)
-      .where(and(eq(activityLogs.action, "login"), gte(activityLogs.createdAt, sevenDaysAgo)));
-
-    const [uploadResult] = await db
-      .select({ count: count() })
-      .from(activityLogs)
-      .where(and(eq(activityLogs.action, "upload"), gte(activityLogs.createdAt, sevenDaysAgo)));
-
-    const [downloadResult] = await db
-      .select({ count: count() })
-      .from(activityLogs)
-      .where(and(eq(activityLogs.action, "download"), gte(activityLogs.createdAt, sevenDaysAgo)));
-
-    return apiSuccess({
-      totalUsers: userCount.total,
-      totalFiles: fileCount.total,
-      loginActivity: loginResult.count,
-      uploadActivity: uploadResult.count,
-      downloadActivity: downloadResult.count,
-    });
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
 
 const logsSchema = z.object({
   userId: z.string().uuid().optional(),
@@ -76,7 +37,7 @@ export async function POST(request: NextRequest) {
         ip: activityLogs.ip,
         createdAt: activityLogs.createdAt,
         username: users.username,
-        phone: users.phone,
+        email: users.email,
         userRole: users.role,
       })
       .from(activityLogs)
@@ -94,7 +55,7 @@ export async function POST(request: NextRequest) {
       filteredLogs = logs.filter(
         (log) =>
           log.username?.toLowerCase().includes(searchLower) ||
-          log.phone?.toLowerCase().includes(searchLower) ||
+          log.email?.toLowerCase().includes(searchLower) ||
           log.action.toLowerCase().includes(searchLower) ||
           log.ip?.toLowerCase().includes(searchLower) ||
           JSON.stringify(log.metadata).toLowerCase().includes(searchLower)

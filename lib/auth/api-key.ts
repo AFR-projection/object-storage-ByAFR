@@ -75,7 +75,7 @@ export const API_KEY_PRESETS = {
 
 export type ApiKeyPreset = keyof typeof API_KEY_PRESETS;
 
-export type AdminApiArea = "users" | "settings" | "stats" | "monitoring" | "shares" | "whatsapp";
+export type AdminApiArea = "users" | "settings" | "stats" | "monitoring" | "shares" | "email";
 
 export type MasterApiKeyScope =
   | ApiKeyScope
@@ -85,7 +85,7 @@ export type MasterApiKeyScope =
   | "admin:stats"
   | "admin:monitoring"
   | "admin:shares"
-  | "admin:whatsapp"
+  | "admin:email"
   | "supreme";
 
 export const MASTER_API_KEY_SCOPES: MasterApiKeyScope[] = [
@@ -96,7 +96,7 @@ export const MASTER_API_KEY_SCOPES: MasterApiKeyScope[] = [
   "admin:stats",
   "admin:monitoring",
   "admin:shares",
-  "admin:whatsapp",
+  "admin:email",
   "full",
   "read",
   "upload",
@@ -144,9 +144,9 @@ export const MASTER_SCOPE_LABELS: Record<
     description: "Manage all shared links platform-wide",
     tier: "admin",
   },
-  "admin:whatsapp": {
-    label: "WhatsApp",
-    description: "WhatsApp sender management and pairing",
+  "admin:email": {
+    label: "Email",
+    description: "Gmail sender management for OTP and notifications",
     tier: "admin",
   },
   full: { ...API_KEY_SCOPE_LABELS.full, tier: "storage" },

@@ -9,12 +9,12 @@ import { apiFetch } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { ScrollText, Search, RefreshCw, Activity, Upload, Download, Trash2, Loader2, FileDown, ChevronDown, ChevronRight, LogIn, LogOut, Share2, Edit3, FolderPlus, FolderMinus, UserPlus, UserMinus, Shield, Star, Clock, Globe, FileText, HardDrive, X } from "lucide-react";
+import { ScrollText, Search, RefreshCw, Activity, Upload, Download, Trash2, Loader2, FileDown, ChevronDown, ChevronRight, LogIn, LogOut, Share2, Edit3, FolderPlus, FolderMinus, UserPlus, UserMinus, Shield, Star, Clock, Globe, FileText, HardDrive, X, Users, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const actionConfig: Record<string, { icon: typeof Upload; color: string; bg: string; label: string; description: string }> = {
   login: { icon: LogIn, color: "text-emerald-500", bg: "bg-emerald-500/10", label: "Login", description: "User logged in" },
-  logout: { icon: LogOut, color: "text-slate-400", bg: "bg-slate-400/10", label: "Logout", description: "User logged out" },
+  logout: { icon: LogOut, color: "text-slate-500 dark:text-slate-400", bg: "bg-slate-400/10", label: "Logout", description: "User logged out" },
   upload: { icon: Upload, color: "text-blue-500", bg: "bg-blue-500/10", label: "Upload", description: "File uploaded" },
   download: { icon: Download, color: "text-violet-500", bg: "bg-violet-500/10", label: "Download", description: "File downloaded" },
   delete: { icon: Trash2, color: "text-red-500", bg: "bg-red-500/10", label: "Delete", description: "File deleted" },
@@ -26,12 +26,12 @@ const actionConfig: Record<string, { icon: typeof Upload; color: string; bg: str
   copy: { icon: FileText, color: "text-indigo-400", bg: "bg-indigo-400/10", label: "Copy", description: "File copied" },
   create_folder: { icon: FolderPlus, color: "text-green-500", bg: "bg-green-500/10", label: "Create Folder", description: "Folder created" },
   delete_folder: { icon: FolderMinus, color: "text-red-400", bg: "bg-red-400/10", label: "Delete Folder", description: "Folder deleted" },
-  impersonate: { icon: Shield, color: "text-yellow-500", bg: "bg-yellow-500/10", label: "Impersonate", description: "Admin impersonated user" },
+  impersonate: { icon: Shield, color: "text-amber-500", bg: "bg-yellow-500/10", label: "Impersonate", description: "Admin impersonated user" },
   create_user: { icon: UserPlus, color: "text-emerald-400", bg: "bg-emerald-400/10", label: "Create User", description: "New user created" },
   update_user: { icon: UserMinus, color: "text-blue-400", bg: "bg-blue-400/10", label: "Update User", description: "User updated" },
   delete_user: { icon: UserMinus, color: "text-red-500", bg: "bg-red-500/10", label: "Delete User", description: "User deleted" },
   suspend_user: { icon: UserMinus, color: "text-orange-500", bg: "bg-orange-500/10", label: "Suspend User", description: "User suspended" },
-  favorite: { icon: Star, color: "text-yellow-400", bg: "bg-yellow-400/10", label: "Favorite", description: "File favorited" },
+  favorite: { icon: Star, color: "text-amber-500", bg: "bg-yellow-400/10", label: "Favorite", description: "File favorited" },
   account_lock: { icon: Shield, color: "text-red-500", bg: "bg-red-500/10", label: "Account Lock", description: "Account locked after failed logins" },
   ip_rate_limit: { icon: Globe, color: "text-orange-500", bg: "bg-orange-500/10", label: "IP Rate Limit", description: "IP hit login rate limit" },
   session_revoked: { icon: LogOut, color: "text-rose-500", bg: "bg-rose-500/10", label: "Session Revoked", description: "Session was revoked" },
@@ -72,7 +72,7 @@ type LogEntry = {
   metadata: Record<string, unknown> | null;
   createdAt: string;
   username: string;
-  phone: string | null;
+  email: string | null;
   userRole: string;
 };
 
@@ -318,12 +318,12 @@ function AdminLogsContent() {
     if (!logs || logs.length === 0) return;
     setExporting(true);
 
-    const headers = ["Timestamp", "Action", "User", "WhatsApp", "Role", "IP", "Resource", "Details"];
+    const headers = ["Timestamp", "Action", "User", "Email", "Role", "IP", "Resource", "Details"];
     const rows = logs.map((log) => [
       new Date(log.createdAt).toISOString(),
       log.action,
       log.username,
-      log.phone ?? "",
+      log.email ?? "",
       log.userRole,
       log.ip ?? "",
       log.resourceType ? `${log.resourceType}/${log.resourceId}` : "",
@@ -377,16 +377,27 @@ function AdminLogsContent() {
       {/* Stats Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Total Logs", value: stats.total, color: "text-foreground" },
-          { label: "Unique Users", value: stats.uniqueUsers, color: "text-blue-500" },
-          { label: "Unique IPs", value: stats.uniqueIPs, color: "text-violet-500" },
-          { label: "Action Types", value: Object.keys(stats.actions).length, color: "text-emerald-500" },
-        ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-border/50 bg-surface/50 px-4 py-3">
-            <p className="text-xs text-muted-foreground">{s.label}</p>
-            <p className={cn("text-2xl font-bold tracking-tight", s.color)}>{s.value}</p>
-          </div>
-        ))}
+          { label: "Total Logs", value: stats.total, icon: Activity, tone: "text-accent", tile: "bg-accent/10" },
+          { label: "Unique Users", value: stats.uniqueUsers, icon: Users, tone: "text-blue-500", tile: "bg-blue-500/10" },
+          { label: "Unique IPs", value: stats.uniqueIPs, icon: Globe, tone: "text-violet-500", tile: "bg-violet-500/10" },
+          { label: "Action Types", value: Object.keys(stats.actions).length, icon: Layers, tone: "text-emerald-500", tile: "bg-emerald-500/10" },
+        ].map((s) => {
+          const Icon = s.icon;
+          return (
+            <div
+              key={s.label}
+              className="flex items-center gap-3 rounded-xl border border-border/50 bg-surface/50 px-4 py-3"
+            >
+              <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", s.tile, s.tone)}>
+                <Icon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">{s.label}</p>
+                <p className="text-2xl font-bold tracking-tight text-foreground">{s.value}</p>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Action Filter Chips */}
@@ -495,7 +506,7 @@ function AdminLogsContent() {
                             <span className="text-xs text-muted-foreground">·</span>
                             <span className="text-xs font-medium text-foreground">{log.username}</span>
                             {log.userRole === "master" && (
-                              <span className="rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-500">ADMIN</span>
+                              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">ADMIN</span>
                             )}
                           </div>
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -538,10 +549,10 @@ function AdminLogsContent() {
                             {log.username}
                           </Link>
                           {log.userRole === "master" && (
-                            <span className="rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-500">ADMIN</span>
+                            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">ADMIN</span>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">{log.phone}</p>
+                        <p className="text-xs text-muted-foreground truncate">{log.email}</p>
                       </div>
                       <div>
                         {log.ip ? (
@@ -591,7 +602,7 @@ function AdminLogsContent() {
                                 <Link href={`/admin/users/${log.userId}`} className="hover:underline">
                                   {log.username}
                                 </Link>{" "}
-                                ({log.phone})
+                                ({log.email})
                               </p>
                               <p className="text-muted-foreground">
                                 ID:{" "}

@@ -37,7 +37,7 @@ const DANGER_SCOPES = new Set([
   "admin:users",
   "admin:settings",
   "admin:shares",
-  "admin:whatsapp",
+  "admin:email",
 ]);
 
 function relativeTime(iso: string): string {

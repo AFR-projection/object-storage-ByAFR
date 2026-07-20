@@ -17,6 +17,13 @@ export interface AdminSettings {
   autoDeleteTrashDays: number;
   rateLimitPerMinute: number;
   logRetentionDays: number;
+  // ── Email delivery (smart router) ──
+  /** Default per-sender daily send cap when a sender doesn't set its own. */
+  emailDailyLimitPerSender: number;
+  /** Consecutive failures before a sender is put on cooldown. */
+  emailFailureThreshold: number;
+  /** How long (minutes) a sender rests after hitting the failure threshold. */
+  emailCooldownMinutes: number;
 }
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
@@ -34,6 +41,9 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   autoDeleteTrashDays: 30,
   rateLimitPerMinute: 60,
   logRetentionDays: 90,
+  emailDailyLimitPerSender: 400,
+  emailFailureThreshold: 3,
+  emailCooldownMinutes: 30,
 };
 
 const CACHE_TTL_MS = 30_000;
@@ -113,6 +123,24 @@ function normalizeSettings(raw: Partial<AdminSettings> | null | undefined): Admi
       7,
       730,
       DEFAULT_ADMIN_SETTINGS.logRetentionDays
+    ),
+    emailDailyLimitPerSender: clamp(
+      Number(cleaned.emailDailyLimitPerSender),
+      1,
+      2000,
+      DEFAULT_ADMIN_SETTINGS.emailDailyLimitPerSender
+    ),
+    emailFailureThreshold: clamp(
+      Number(cleaned.emailFailureThreshold),
+      1,
+      20,
+      DEFAULT_ADMIN_SETTINGS.emailFailureThreshold
+    ),
+    emailCooldownMinutes: clamp(
+      Number(cleaned.emailCooldownMinutes),
+      1,
+      1440,
+      DEFAULT_ADMIN_SETTINGS.emailCooldownMinutes
     ),
   };
 }

@@ -30,6 +30,9 @@ const patchSchema = z
     autoDeleteTrashDays: z.number().optional(),
     rateLimitPerMinute: z.number().optional(),
     logRetentionDays: z.number().optional(),
+    emailDailyLimitPerSender: z.number().optional(),
+    emailFailureThreshold: z.number().optional(),
+    emailCooldownMinutes: z.number().optional(),
   })
   .strip();
 

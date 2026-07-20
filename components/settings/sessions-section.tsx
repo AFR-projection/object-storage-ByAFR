@@ -148,7 +148,7 @@ export function SessionsSection() {
             <p className="text-sm font-semibold tracking-tight">Session protection</p>
             <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
               Idle timeout, IP binding in production, encrypted cookies, and remote sign-out.
-              New logins notify you on WhatsApp.
+              New logins notify you by email.
             </p>
           </div>
         </div>

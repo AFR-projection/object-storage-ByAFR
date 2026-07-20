@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Cloud, Loader2, Eye, EyeOff, MessageCircle } from "lucide-react";
+import { Cloud, Loader2, Eye, EyeOff, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
@@ -13,7 +13,7 @@ import { getPasswordPolicyRules } from "@/lib/security/password-policy";
 export default function RegisterPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -54,30 +54,22 @@ export default function RegisterPage() {
       setError("Username may only contain letters, numbers, dot, underscore, and hyphen (no spaces)");
       return;
     }
-    const cleanPhone = phoneNumber.replace(/\D/g, "");
-    if (cleanPhone.length < 10) {
-      setError("Invalid WhatsApp number (min 10 digits, e.g. 628xxxxxxxxx)");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      setError("Please enter a valid email address");
       return;
     }
 
     setLoading(true);
     try {
-      const res = await apiFetch<{ pairingCode?: string }>("/api/auth/register-wa", {
+      const res = await apiFetch<{ email?: string }>("/api/auth/register-email", {
         method: "POST",
-        body: JSON.stringify({
-          username,
-          phoneNumber: cleanPhone,
-          password,
-        }),
+        body: JSON.stringify({ username, email: email.trim().toLowerCase(), password }),
       });
       if (!res.success) {
         setError(res.error ?? "Registration failed");
         return;
       }
-      const code = res.data?.pairingCode ?? "";
-      router.push(
-        `/verify-wa?phone=${encodeURIComponent(cleanPhone)}&code=${encodeURIComponent(code)}`
-      );
+      router.push(`/verify-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);
     } catch {
       setError("Connection failed");
     } finally {
@@ -128,19 +120,21 @@ export default function RegisterPage() {
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium flex items-center gap-2">
-                <MessageCircle className="h-4 w-4" />
-                WhatsApp Number
+                <Mail className="h-4 w-4" />
+                Email Address
               </label>
               <Input
-                type="tel"
-                placeholder="62812345678"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
                 required
-                minLength={10}
                 className="h-11"
               />
-              <p className="mt-1 text-xs text-muted-foreground">Format: 62XXXXXXXXXX (without +)</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                We&apos;ll send a 6-digit code here to verify your account.
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium">Password</label>
@@ -173,7 +167,7 @@ export default function RegisterPage() {
               <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</p>
             )}
 
-            <Button type="submit" className="h-11 w-full" disabled={loading || !username || !phoneNumber || !password}>
+            <Button type="submit" className="h-11 w-full" disabled={loading || !username || !email || !password}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Continue"}
             </Button>
           </form>

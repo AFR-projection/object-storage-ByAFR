@@ -7,9 +7,9 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  // baileys pulls Node-only deps (ws, etc.) — keep it external so WA sockets
-  // work in the standalone Docker server, not just `next dev`.
-  serverExternalPackages: ["sharp", "@node-rs/argon2", "baileys", "qrcode"],
+  // nodemailer is Node-only (net/tls) — keep it external so SMTP works in the
+  // standalone Docker server, not just `next dev`.
+  serverExternalPackages: ["sharp", "@node-rs/argon2", "nodemailer"],
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },

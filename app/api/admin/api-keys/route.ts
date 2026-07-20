@@ -48,7 +48,7 @@ const masterScopeEnum = z.enum([
   "admin:stats",
   "admin:monitoring",
   "admin:shares",
-  "admin:whatsapp",
+  "admin:email",
   "supreme",
 ]);
 
