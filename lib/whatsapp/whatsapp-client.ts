@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { mkdir, rm } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
+import { FALLBACK_WA_VERSION, parseWaVersionString } from "./wa-version";
 
 type WAStatus = "connecting" | "connected" | "disconnected" | "error";
 
@@ -36,6 +37,45 @@ export function sessionsRoot() {
 
 function sessionDir(senderId: string) {
   return path.join(sessionsRoot(), senderId);
+}
+
+/** Track how the version was resolved, for diagnostics. */
+let lastVersionSource: "env" | "live" | "fallback" = "fallback";
+export function getLastWaVersionSource() {
+  return lastVersionSource;
+}
+
+/**
+ * Resolve the WhatsApp Web version WITHOUT ever throwing. Order:
+ *   1. WA_VERSION env ("2,3000,1023223821")
+ *   2. live fetchLatestBaileysVersion() bounded to 8s
+ *   3. pinned fallback
+ * On a locked-down VPS the live call may hang/fail — that must not kill init.
+ */
+async function resolveWaVersion(): Promise<[number, number, number]> {
+  const envVer = parseWaVersionString(process.env.WA_VERSION);
+  if (envVer) {
+    lastVersionSource = "env";
+    return envVer;
+  }
+
+  try {
+    const result = await Promise.race([
+      fetchLatestBaileysVersion(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("version fetch timeout")), 8_000)
+      ),
+    ]);
+    lastVersionSource = "live";
+    return result.version as [number, number, number];
+  } catch (err) {
+    console.warn(
+      `[WA] fetchLatestBaileysVersion failed, using pinned fallback ${FALLBACK_WA_VERSION.join(".")}:`,
+      err instanceof Error ? err.message : err
+    );
+    lastVersionSource = "fallback";
+    return FALLBACK_WA_VERSION;
+  }
 }
 
 /**
@@ -67,9 +107,12 @@ export async function initWAClient(
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { state, saveCreds } = await useMultiFileAuthState(dir);
 
-  // Fetching the latest WhatsApp Web version is REQUIRED — a stale version makes
-  // WhatsApp reject the connection with 405 before any QR/pairing code is emitted.
-  const { version } = await fetchLatestBaileysVersion();
+  // Fetching the latest WhatsApp Web version keeps WhatsApp from rejecting the
+  // connection (a stale version → 405 before any QR/pairing code). BUT on a VPS
+  // this outbound call can fail (firewall/DNS/timeout) — and if it throws, the
+  // whole init dies and OTP silently stops. So we bound it and fall back to a
+  // pinned known-good version. Override via WA_VERSION="2,3000,1234567".
+  const version = await resolveWaVersion();
 
   const socket = makeWASocket({
     version,
@@ -257,6 +300,43 @@ export function getAllWAInstances(): WAInstance[] {
 }
 
 /**
+ * Diagnostic snapshot for admins — answers "why is WhatsApp down on the VPS?"
+ * without SSH. Reports the sessions dir, whether it's writable, how the WA
+ * version was resolved, and per-sender live socket status vs on-disk session.
+ */
+export async function getWaHealth() {
+  const root = sessionsRoot();
+  let sessionsDirWritable = false;
+  try {
+    await mkdir(root, { recursive: true });
+    const probe = path.join(root, ".write-probe");
+    const { writeFile, unlink } = await import("fs/promises");
+    await writeFile(probe, "ok");
+    await unlink(probe).catch(() => {});
+    sessionsDirWritable = true;
+  } catch {
+    sessionsDirWritable = false;
+  }
+
+  const live = getAllWAInstances().map((i) => ({
+    id: i.id,
+    phoneNumber: i.phoneNumber,
+    status: i.status,
+    hasSocket: !!i.socket,
+    hasSessionOnDisk: existsSync(path.join(sessionDir(i.id), "creds.json")),
+  }));
+
+  return {
+    sessionsDir: root,
+    sessionsDirWritable,
+    waVersionSource: lastVersionSource,
+    liveInstances: live.length,
+    connected: live.filter((i) => i.status === "connected").length,
+    instances: live,
+  };
+}
+
+/**
  * Ensure a sender's socket is live in memory. After a server restart the DB may
  * still say "connected" while the in-memory socket is gone; if the on-disk
  * session is still valid we transparently re-init and wait for it to open.
@@ -318,8 +398,20 @@ export async function sendMessage(
       }
     }
 
-    await instance.socket.sendMessage(jid, { text: message });
-    return true;
+    // Retry the actual send on transient failures (network blip, ack timeout).
+    // Two quick attempts; a genuinely-offline socket still fails fast.
+    let lastErr: unknown = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await instance.socket.sendMessage(jid, { text: message });
+        return true;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+    console.error(`[WA] send error (${phoneNumber}) after retries:`, lastErr);
+    return false;
   } catch (err) {
     console.error(`[WA] send error (${phoneNumber}):`, err);
     return false;

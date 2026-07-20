@@ -1,6 +1,7 @@
 "use client";
 
 import { encryptFile, type EncryptionMetaV1 } from "@/lib/crypto/client-encryption";
+import { markLocalUpload } from "@/lib/system/local-upload-registry";
 import {
   MULTIPART_PART_SIZE_BYTES,
   MULTIPART_PARALLEL_PARTS,
@@ -431,6 +432,9 @@ export class UploadQueue {
         if (okIds.has(entry.fileId)) {
           item.status = "done";
           item.progress = 100;
+          // Mark so the realtime SSE toast for this file is suppressed (the
+          // upload panel shows a batch summary instead — no double toast).
+          markLocalUpload(item.fileId);
           this.emit("complete", item);
         } else {
           this.failOrRetry(item, new Error(failMap.get(entry.fileId) ?? "Complete failed"));

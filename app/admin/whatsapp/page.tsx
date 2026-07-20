@@ -12,6 +12,10 @@ import {
   QrCode,
   Phone,
   X,
+  ShieldCheck,
+  AlertTriangle,
+  HardDrive,
+  Wifi,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -145,6 +149,8 @@ export default function WhatsAppSettings() {
           </Button>
         }
       />
+
+      <WaHealthPanel />
 
       {isLoading ? (
         <div className="flex justify-center py-12">
@@ -408,6 +414,135 @@ export default function WhatsAppSettings() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── WhatsApp health / diagnostics panel ──────────────────────────────────────
+
+type WaHealth = {
+  healthy: boolean;
+  sessionsDir: string;
+  sessionsDirWritable: boolean;
+  waVersionSource: "env" | "live" | "fallback";
+  liveInstances: number;
+  connected: number;
+  problems: string[];
+};
+
+function WaHealthPanel() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["whatsapp-health"],
+    queryFn: async () => {
+      const res = await apiFetch<WaHealth>("/api/admin/whatsapp/health");
+      if (!res.success || !res.data) throw new Error(res.error ?? "unavailable");
+      return res.data;
+    },
+    refetchInterval: 15000,
+  });
+
+  if (isLoading || !data) {
+    return (
+      <Card>
+        <CardContent className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Checking WhatsApp health…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const ok = data.healthy;
+
+  return (
+    <Card
+      className={cn(
+        "border",
+        ok ? "border-emerald-500/30 bg-emerald-500/[0.04]" : "border-amber-500/30 bg-amber-500/[0.05]"
+      )}
+    >
+      <CardContent className="space-y-3 py-4">
+        <div className="flex items-center gap-2.5">
+          <div
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-xl",
+              ok
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+            )}
+          >
+            {ok ? <ShieldCheck className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">
+              {ok ? "WhatsApp gateway healthy" : "WhatsApp gateway needs attention"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {data.connected} connected · {data.liveInstances} live socket
+              {data.liveInstances === 1 ? "" : "s"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <HealthStat
+            icon={HardDrive}
+            label="Sessions writable"
+            value={data.sessionsDirWritable ? "Yes" : "No"}
+            good={data.sessionsDirWritable}
+          />
+          <HealthStat
+            icon={Wifi}
+            label="WA version source"
+            value={data.waVersionSource}
+            good={data.waVersionSource !== "fallback"}
+          />
+          <HealthStat
+            icon={MessageCircle}
+            label="Connected senders"
+            value={String(data.connected)}
+            good={data.connected > 0}
+          />
+        </div>
+
+        {data.problems.length > 0 && (
+          <ul className="space-y-1.5 rounded-lg border border-amber-500/25 bg-amber-500/[0.06] p-3">
+            {data.problems.map((p, i) => (
+              <li key={i} className="flex gap-2 text-[12px] text-amber-800 dark:text-amber-100/90">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                {p}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <p className="truncate font-mono text-[10.5px] text-muted-foreground/70">
+          {data.sessionsDir}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function HealthStat({
+  icon: Icon,
+  label,
+  value,
+  good,
+}: {
+  icon: typeof HardDrive;
+  label: string;
+  value: string;
+  good: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2">
+      <Icon className={cn("h-4 w-4 shrink-0", good ? "text-emerald-500" : "text-amber-500")} />
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{label}</p>
+        <p className={cn("truncate text-xs font-semibold capitalize", good ? "" : "text-amber-600 dark:text-amber-400")}>
+          {value}
+        </p>
+      </div>
     </div>
   );
 }

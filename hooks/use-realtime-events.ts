@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { RealtimeEvent } from "@/lib/realtime/types";
 import { notify, setConnectionStatus, showSystemToast } from "@/lib/system/notify-store";
+import { consumeLocalUpload } from "@/lib/system/local-upload-registry";
 
 const SESSION_ID_KEY = "storage_current_session_id";
 
@@ -59,6 +60,10 @@ function toastForEvent(
 ): { title: string; description?: string; tone?: "info" | "success" | "warning" | "system" } | null {
   switch (event.type) {
     case "upload_complete":
+      // Suppress the realtime toast for files uploaded in THIS tab — the upload
+      // panel already shows a batch-summary toast, so showing both is redundant.
+      // Uploads from other devices still surface here (that's the whole point).
+      if (consumeLocalUpload(event.fileId)) return null;
       return {
         title: "Upload complete",
         description: event.name,

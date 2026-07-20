@@ -5,7 +5,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { motion } from "framer-motion";
 import {
   FileText, Image, Film, Music, FileArchive, File,
-  Star, Trash2, Copy, RotateCcw, Pencil, MoreHorizontal, Download,
+  Star, Trash2, Copy, CopyPlus, Scissors, RotateCcw, Pencil, MoreHorizontal, Download,
   Play, Share2, Check, Lock, FolderInput,
   ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
@@ -144,10 +144,12 @@ function buildFileMenuItems(
   return [
     { id: "download", label: "Download", icon: Download, onClick: () => onAction("download", file) },
     { id: "share", label: "Share", icon: Share2, onClick: () => onAction("share", file) },
+    { id: "clip-copy", label: "Copy", icon: Copy, onClick: () => onAction("clip-copy", file) },
+    { id: "clip-cut", label: "Cut", icon: Scissors, onClick: () => onAction("clip-cut", file) },
     { id: "rename", label: "Rename", icon: Pencil, onClick: () => onAction("rename", file) },
     { id: "move", label: "Move to…", icon: FolderInput, onClick: () => onAction("move", file) },
     { id: "favorite", label: file.isFavorite ? "Unfavorite" : "Favorite", icon: Star, onClick: () => onAction("favorite", file) },
-    { id: "duplicate", label: "Duplicate", icon: Copy, onClick: () => onAction("duplicate", file) },
+    { id: "duplicate", label: "Duplicate", icon: CopyPlus, onClick: () => onAction("duplicate", file) },
     { id: "delete", label: "Move to trash", icon: Trash2, danger: true, onClick: () => onAction("delete", file) },
   ];
 }

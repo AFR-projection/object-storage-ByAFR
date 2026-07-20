@@ -10,8 +10,12 @@ const OTP_EXPIRY_MINUTES = 5;
 const OTP_RATE_LIMIT_SECONDS = 60;
 const PAIRING_EXPIRY_MINUTES = 15;
 
-/** Return the id of the first active, connected sender, or null if none. */
-async function pickReadySender(): Promise<string | null> {
+/**
+ * Return ALL active senders that are (or can be revived to) connected, in
+ * priority order. Used for failover: if the top sender's send fails, the caller
+ * falls through to the next one instead of giving up.
+ */
+async function readySenderIds(): Promise<string[]> {
   // Belt-and-suspenders: if instrumentation did not run (or raced), restore
   // sockets from disk before picking a sender. Critical for inbound pairing
   // replies after a VPS restart.
@@ -28,22 +32,26 @@ async function pickReadySender(): Promise<string | null> {
     )
     .orderBy(whatsappSenders.priority);
 
+  const ready: string[] = [];
   for (const sender of senders) {
-    const ready = await ensureConnected(sender.id, sender.phoneNumber);
-    if (ready) return sender.id;
+    const ok = await ensureConnected(sender.id, sender.phoneNumber);
+    if (ok) ready.push(sender.id);
   }
-  return null;
+  return ready;
 }
 
 /**
- * Pick an active sender (round-robin by priority) and deliver a plain message.
+ * Pick an active sender (round-robin by priority) and deliver a plain message,
+ * failing over to the next ready sender if a send fails.
  * Uses ensureConnected() so a sender whose socket was lost on a server restart
  * is transparently revived from its on-disk session before sending.
  */
 async function deliver(phoneNumber: string, message: string): Promise<boolean> {
-  const senderId = await pickReadySender();
-  if (!senderId) return false;
-  return sendMessage(senderId, phoneNumber, message);
+  const ids = await readySenderIds();
+  for (const senderId of ids) {
+    if (await sendMessage(senderId, phoneNumber, message)) return true;
+  }
+  return false;
 }
 
 /**
@@ -55,11 +63,16 @@ async function deliver(phoneNumber: string, message: string): Promise<boolean> {
  */
 export async function deliverOtp(phoneNumber: string, code: string): Promise<boolean> {
   const cleanPhone = phoneNumber.replace(/\D/g, "");
-  const senderId = await pickReadySender();
-  if (!senderId) return false;
+  const ids = await readySenderIds();
 
-  await sendMessage(senderId, cleanPhone, otpInfo(OTP_EXPIRY_MINUTES));
-  return sendMessage(senderId, cleanPhone, otpCodeOnly(code));
+  // Try each ready sender until one delivers BOTH messages. Both must come from
+  // the same sender, so we only commit to a sender once its info message lands.
+  for (const senderId of ids) {
+    const infoOk = await sendMessage(senderId, cleanPhone, otpInfo(OTP_EXPIRY_MINUTES));
+    if (!infoOk) continue; // sender is unhealthy for this recipient → next sender
+    return sendMessage(senderId, cleanPhone, otpCodeOnly(code));
+  }
+  return false;
 }
 
 export async function sendOTP(phoneNumber: string): Promise<string | null> {

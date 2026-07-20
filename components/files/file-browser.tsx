@@ -7,6 +7,7 @@ import {
   Upload, FolderPlus, FilePlus, Grid3X3, List, Search, Trash2, AlertCircle, FolderUp,
   Image, Film, Music, FileText, FileArchive, Star, X, CheckSquare, Square,
   Download, File, Lock, Move, ArrowDownUp, ArrowUp, ArrowDown, Check, PencilRuler,
+  Copy, Scissors, ClipboardPaste,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,10 @@ import {
   SORT_OPTIONS,
 } from "@/lib/files/view-prefs";
 import { sortFiles } from "@/lib/files/sort";
+import {
+  setClipboard, clearClipboard, getClipboard, useFileClipboard,
+} from "@/lib/files/clipboard";
+import { notify } from "@/lib/system/notify-store";
 import { motion, AnimatePresence } from "framer-motion";
 
 const NoteEditor = dynamic(() => import("@/components/editors/note-editor").then((m) => m.NoteEditor), { ssr: false });
@@ -102,6 +107,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
   // Bulk-rename dialog: holds the files being renamed (null = closed)
   const [bulkRenameIds, setBulkRenameIds] = useState<string[] | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const clipboard = useFileClipboard();
 
   // File preview / note editor
   const [selectedFile, setSelectedFile] = useState<FileRecord | null>(null);
@@ -330,6 +336,25 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     noKeyboard: true,
   });
 
+  // ── Clipboard: copy / cut (paste lives below, needs folderId handlers) ──
+  const copyToClipboard = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    const label = ids.length === 1
+      ? (allFiles.find((x) => x.id === ids[0])?.name ?? "1 file")
+      : `${ids.length} files`;
+    setClipboard("copy", ids, label);
+    notify({ title: "Copied", description: `${label} ready to paste`, tone: "info", duration: 2500 });
+  }, [allFiles]);
+
+  const cutToClipboard = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    const label = ids.length === 1
+      ? (allFiles.find((x) => x.id === ids[0])?.name ?? "1 file")
+      : `${ids.length} files`;
+    setClipboard("cut", ids, label);
+    notify({ title: "Cut", description: `${label} ready to move`, tone: "info", duration: 2500 });
+  }, [allFiles]);
+
   // ── File actions ──
   const handleFileAction = useCallback(async (action: string, file: FileRecord) => {
     try {
@@ -351,6 +376,14 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
       }
       if (action === "move") {
         setMoveIds([file.id]);
+        return;
+      }
+      if (action === "clip-copy") {
+        copyToClipboard(selectedIds.has(file.id) ? Array.from(selectedIds) : [file.id]);
+        return;
+      }
+      if (action === "clip-cut") {
+        cutToClipboard(selectedIds.has(file.id) ? Array.from(selectedIds) : [file.id]);
         return;
       }
       if (trash) {
@@ -397,7 +430,7 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     } catch {
       showError("Connection failed");
     }
-  }, [trash, queryClient, showError, askPrompt, askConfirm]);
+  }, [trash, queryClient, showError, askPrompt, askConfirm, copyToClipboard, cutToClipboard, selectedIds]);
 
   // ── Folder actions ──
   async function createFolder() {
@@ -770,6 +803,40 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
     queryClient.invalidateQueries({ queryKey: ["files"] });
   }
 
+  // Paste = copy or move the clipboard contents INTO the current folder.
+  async function pasteHere() {
+    const clip = getClipboard();
+    if (!clip) return;
+    try {
+      if (clip.mode === "cut") {
+        const res = await apiFetch("/api/files/batch", {
+          method: "PATCH",
+          body: JSON.stringify({ ids: clip.ids, action: "move", folderId }),
+        });
+        if (!res.success) { showError(res.error ?? "Failed to move"); return; }
+      } else {
+        // Copy: duplicate each file into this folder (server copies the R2 object).
+        let failed = 0;
+        for (const id of clip.ids) {
+          const res = await apiFetch("/api/files", {
+            method: "PATCH",
+            body: JSON.stringify({ id, action: "copy", targetFolderId: folderId }),
+          });
+          if (!res.success) failed++;
+        }
+        if (failed > 0) showError(`${failed} file${failed > 1 ? "s" : ""} could not be copied`);
+      }
+      // A cut is consumed on paste; a copy stays so it can be pasted again.
+      if (clip.mode === "cut") clearClipboard();
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["files"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      notify({ title: "Pasted", description: `into ${folderId ? "this folder" : "My Files"}`, tone: "success", duration: 2500 });
+    } catch {
+      showError("Connection failed");
+    }
+  }
+
   async function batchDownload() {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
@@ -862,6 +929,24 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
         if (filteredFiles.length === 0) return;
         e.preventDefault();
         setSelectedIds(new Set(filteredFiles.map((f) => f.id)));
+        return;
+      }
+
+      // Ctrl/Cmd+V pastes the clipboard into the current folder (works with an
+      // empty selection too — that's the common Explorer flow).
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v" && !trash) {
+        if (getClipboard()) { e.preventDefault(); void pasteHere(); }
+        return;
+      }
+      // Ctrl/Cmd+C / Ctrl/Cmd+X copy or cut the current selection.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && selectedIds.size > 0 && !trash) {
+        e.preventDefault();
+        copyToClipboard(Array.from(selectedIds));
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x" && selectedIds.size > 0 && !trash) {
+        e.preventDefault();
+        cutToClipboard(Array.from(selectedIds));
         return;
       }
 
@@ -1024,6 +1109,20 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
             </label>
           )}
 
+          {/* Paste — shown only when the clipboard has files (Explorer style) */}
+          {clipboard && !trash && !favorites && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-9 gap-1.5 px-2 sm:px-3 border border-accent/30 bg-accent/5"
+              onClick={pasteHere}
+              title={`Paste ${clipboard.count} ${clipboard.mode === "cut" ? "(move)" : "(copy)"}`}
+            >
+              <ClipboardPaste className="h-4 w-4 sm:mr-0.5" />
+              <span className="hidden sm:inline">Paste ({clipboard.count})</span>
+            </Button>
+          )}
+
           {/* Sort dropdown — lets grid view sort too, not just list headers */}
           <div className="relative">
             <Button
@@ -1163,6 +1262,18 @@ export function FileBrowser({ folderId = null, trash = false, favorites = false,
               <Download className="h-3.5 w-3.5" />
               Download
             </Button>
+            {!trash && (
+              <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => copyToClipboard(Array.from(selectedIds))}>
+                <Copy className="h-3.5 w-3.5" />
+                Copy
+              </Button>
+            )}
+            {!trash && (
+              <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => cutToClipboard(Array.from(selectedIds))}>
+                <Scissors className="h-3.5 w-3.5" />
+                Cut
+              </Button>
+            )}
             {!trash && (
               <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setMoveIds(Array.from(selectedIds))}>
                 <Move className="h-3.5 w-3.5" />
