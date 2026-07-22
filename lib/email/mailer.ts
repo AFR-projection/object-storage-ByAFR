@@ -90,6 +90,32 @@ export type SendArgs = {
   text: string;
 };
 
+/**
+ * The subset of nodemailer's SMTP `SentMessageInfo` we log for diagnostics.
+ * `accepted`/`rejected`/`response` are the verdict of the SENDING relay
+ * (smtp.gmail.com), NOT proof of inbox delivery: Gmail can accept a message
+ * here (250 ...gsmtp) and then silently spam-file or drop it downstream. So a
+ * clean 250 here + "user never got it" points at filtering, not this app.
+ */
+type SmtpSentInfo = {
+  messageId?: string;
+  response?: string;
+  accepted?: unknown;
+  rejected?: unknown;
+};
+
+/** Nodemailer reports accepted/rejected as strings or {address} objects; flatten to strings. */
+function addrList(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((x) =>
+    typeof x === "string"
+      ? x
+      : x && typeof x === "object" && "address" in x
+        ? String((x as { address: unknown }).address)
+        : String(x)
+  );
+}
+
 /** Send via a specific sender row. Returns false on any failure (never throws). */
 export async function sendViaSender(
   sender: { id: string; email: string; appPasswordEncrypted: string; fromName: string },
@@ -110,20 +136,41 @@ export async function sendViaSender(
   const startedAt = Date.now();
   try {
     const transport = transportFor(sender.id, sender.email, appPassword);
-    const info = await transport.sendMail({
+    const info = (await transport.sendMail({
       from: { name: sender.fromName, address: sender.email },
       to: args.to,
       subject: args.subject,
       text: args.text,
       html: args.html,
-    });
-    recordEmailLog("info", "send", `Sent "${args.subject}" to ${args.to} via ${sender.email}`, {
-      to: args.to,
-      via: sender.email,
-      senderId: sender.id,
-      messageId: (info as { messageId?: string }).messageId,
-      durationMs: Date.now() - startedAt,
-    });
+    })) as SmtpSentInfo;
+
+    const accepted = addrList(info.accepted);
+    const rejected = addrList(info.rejected);
+    // nodemailer throws when a single recipient is rejected, so a resolved send
+    // normally means the relay took it. We still surface rejected/partial cases
+    // as a warning instead of a clean "Sent".
+    const recipientTaken =
+      accepted.length === 0 ||
+      accepted.some((a) => a.toLowerCase() === args.to.toLowerCase());
+
+    recordEmailLog(
+      rejected.length > 0 || !recipientTaken ? "warn" : "info",
+      "send",
+      `Sent "${args.subject}" to ${args.to} via ${sender.email}`,
+      {
+        to: args.to,
+        via: sender.email,
+        senderId: sender.id,
+        messageId: info.messageId,
+        // Literal 250 line from smtp.gmail.com. "250 ... OK ... gsmtp" == Gmail
+        // QUEUED it; if the user still never receives it, the loss is downstream
+        // (spam/phishing filtering), not in this app.
+        smtpResponse: info.response,
+        accepted,
+        rejected,
+        durationMs: Date.now() - startedAt,
+      }
+    );
     return true;
   } catch (err) {
     recordEmailLog("error", "send", `Send failed to ${args.to} via ${sender.email}`, {
