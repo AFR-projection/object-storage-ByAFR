@@ -1,13 +1,26 @@
 import Redis from "ioredis";
 import { getRedis } from "@/lib/cache/redis";
-import type { RealtimeEvent, RealtimeEventHandler } from "./types";
+import type {
+  RealtimeEvent,
+  RealtimeEventHandler,
+  AdminRealtimeEvent,
+  AdminRealtimeEventHandler,
+} from "./types";
 
-export type { RealtimeEvent, RealtimeEventHandler } from "./types";
+export type {
+  RealtimeEvent,
+  RealtimeEventHandler,
+  AdminRealtimeEvent,
+  AdminRealtimeEventHandler,
+} from "./types";
 
 const CHANNEL_PREFIX = "realtime:user:";
+const ADMIN_CHANNEL = "realtime:admin";
 
 /** Per-process in-memory subscribers (dev / single process, and local fan-out). */
 const localSubscribers = new Map<string, Set<RealtimeEventHandler>>();
+/** Per-process subscribers for the admin broadcast channel. */
+const adminSubscribers = new Set<AdminRealtimeEventHandler>();
 
 let publisher: Redis | null = null;
 let subscriber: Redis | null = null;
@@ -26,6 +39,17 @@ function deliverLocal(userId: string, event: RealtimeEvent): void {
   const set = localSubscribers.get(userId);
   if (!set || set.size === 0) return;
   for (const cb of set) {
+    try {
+      cb(event);
+    } catch {
+      // ignore subscriber errors
+    }
+  }
+}
+
+function deliverAdmin(event: AdminRealtimeEvent): void {
+  if (adminSubscribers.size === 0) return;
+  for (const cb of adminSubscribers) {
     try {
       cb(event);
     } catch {
@@ -83,11 +107,14 @@ async function ensureSubscriber(): Promise<Redis | null> {
       const client = createPubSubClient();
       client.on("error", () => {});
       client.on("message", (channel: string, message: string) => {
-        if (!channel.startsWith(CHANNEL_PREFIX)) return;
-        const userId = channel.slice(CHANNEL_PREFIX.length);
         try {
-          const event = JSON.parse(message) as RealtimeEvent;
-          deliverLocal(userId, event);
+          if (channel === ADMIN_CHANNEL) {
+            deliverAdmin(JSON.parse(message) as AdminRealtimeEvent);
+            return;
+          }
+          if (!channel.startsWith(CHANNEL_PREFIX)) return;
+          const userId = channel.slice(CHANNEL_PREFIX.length);
+          deliverLocal(userId, JSON.parse(message) as RealtimeEvent);
         } catch {
           // ignore bad payloads
         }
@@ -119,6 +146,19 @@ async function ensureChannelSubscribed(userId: string): Promise<void> {
     await sub.subscribe(channel);
   } catch {
     subscribedChannels.delete(channel);
+  }
+}
+
+async function ensureAdminChannelSubscribed(): Promise<void> {
+  if (subscribedChannels.has(ADMIN_CHANNEL)) return;
+  subscribedChannels.add(ADMIN_CHANNEL);
+
+  const sub = await ensureSubscriber();
+  if (!sub) return;
+  try {
+    await sub.subscribe(ADMIN_CHANNEL);
+  } catch {
+    subscribedChannels.delete(ADMIN_CHANNEL);
   }
 }
 
@@ -160,5 +200,34 @@ export function subscribeUser(userId: string, callback: RealtimeEventHandler): (
     if (current.size === 0) {
       localSubscribers.delete(userId);
     }
+  };
+}
+
+/**
+ * Publish an event to every admin SSE listener (the `realtime:admin` channel).
+ * Uses Redis pub/sub when available (multi-process/docker); otherwise in-memory.
+ */
+export async function publishToAdmins(event: AdminRealtimeEvent): Promise<void> {
+  const pub = await ensurePublisher();
+  if (pub) {
+    try {
+      await pub.publish(ADMIN_CHANNEL, JSON.stringify(event));
+      return;
+    } catch {
+      // fall through to in-memory
+    }
+  }
+  deliverAdmin(event);
+}
+
+/**
+ * Subscribe to admin broadcast events in this process. Returns an unsubscribe
+ * function. Used by the admin SSE endpoint (`GET /api/admin/events`).
+ */
+export function subscribeAdmins(callback: AdminRealtimeEventHandler): () => void {
+  adminSubscribers.add(callback);
+  void ensureAdminChannelSubscribed();
+  return () => {
+    adminSubscribers.delete(callback);
   };
 }

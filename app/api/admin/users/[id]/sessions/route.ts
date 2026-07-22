@@ -7,7 +7,7 @@ import { getClientIp, deviceLabelFromUa, deviceKindFromUa } from "@/lib/auth/ses
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { logActivity } from "@/lib/auth/audit";
-import { publishToUser } from "@/lib/realtime/events";
+import { publishToUser, publishToAdmins } from "@/lib/realtime/events";
 
 /**
  * Admin: revoke one session for a user, or all sessions with ?all=1.
@@ -53,6 +53,8 @@ export async function DELETE(
         wasCurrent: true,
       }).catch(() => {});
 
+      void publishToAdmins({ type: "user_updated", userId, at: Date.now() });
+
       return apiSuccess({ revoked: "all", count: active.length });
     }
 
@@ -89,6 +91,8 @@ export async function DELETE(
       reason: "admin_revoke_one",
       wasCurrent: false,
     }).catch(() => {});
+
+    void publishToAdmins({ type: "user_updated", userId, at: Date.now() });
 
     return apiSuccess({ revoked: sessionId });
   } catch (error) {

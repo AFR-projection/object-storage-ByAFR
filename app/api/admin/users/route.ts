@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { eq, desc, count, sum, and, isNull } from "drizzle-orm";
+import { eq, desc, count, gt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, files, activityLogs } from "@/lib/db/schema";
+import { users, files, sessions } from "@/lib/db/schema";
 import { requireMasterOrApiKey } from "@/lib/auth/api-key";
 import { getClientIp } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
@@ -11,15 +11,79 @@ import { validateCsrf } from "@/lib/security";
 import { validatePasswordStrength } from "@/lib/security/password-policy";
 import { deleteR2Object } from "@/lib/storage/r2";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
-import { cacheDelPattern } from "@/lib/cache/redis";
 import { defaultQuotaBytes, getAdminSettings } from "@/lib/admin-settings";
+import { publishToAdmins } from "@/lib/realtime/events";
+
+/** A user counts as "online" if a live session was active within this window. */
+const ONLINE_WINDOW_MS = 3 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
   try {
     await requireMasterOrApiKey(request, "users");
+    const now = Date.now();
 
-    const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
-    return apiSuccess({ users: allUsers });
+    // Explicit safe columns — never ship passwordHash / totpSecret / recovery codes.
+    const rows = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        phone: users.phone,
+        role: users.role,
+        status: users.status,
+        suspendReason: users.suspendReason,
+        mustChangePassword: users.mustChangePassword,
+        totpEnabled: users.totpEnabled,
+        quotaBytes: users.quotaBytes,
+        usedBytes: users.usedBytes,
+        bandwidthQuotaBytes: users.bandwidthQuotaBytes,
+        bandwidthUsedBytes: users.bandwidthUsedBytes,
+        lockedUntil: users.lockedUntil,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      })
+      .from(users)
+      .orderBy(desc(users.createdAt));
+
+    // Presence in one grouped pass over non-expired sessions (no N+1).
+    const presenceRows = await db
+      .select({
+        userId: sessions.userId,
+        activeSessions: count(),
+        lastActiveAt: sql<Date | null>`max(${sessions.lastActiveAt})`,
+      })
+      .from(sessions)
+      .where(gt(sessions.expiresAt, new Date()))
+      .groupBy(sessions.userId);
+
+    const presenceByUser = new Map(presenceRows.map((p) => [p.userId, p]));
+
+    const enriched = rows.map((u) => {
+      const p = presenceByUser.get(u.id);
+      const lastActiveMs = p?.lastActiveAt ? new Date(p.lastActiveAt).getTime() : null;
+      const online = lastActiveMs !== null && now - lastActiveMs < ONLINE_WINDOW_MS;
+      // Pending email verification = suspended with NO admin reason (that's how
+      // register-email parks accounts); an admin suspend always carries a reason.
+      const verification: "active" | "unverified" | "suspended" =
+        u.status === "active" ? "active" : u.suspendReason ? "suspended" : "unverified";
+      return {
+        ...u,
+        activeSessions: p?.activeSessions ?? 0,
+        lastActiveAt: lastActiveMs !== null ? new Date(lastActiveMs).toISOString() : null,
+        online,
+        verification,
+      };
+    });
+
+    const stats = {
+      total: enriched.length,
+      online: enriched.filter((u) => u.online).length,
+      active: enriched.filter((u) => u.verification === "active").length,
+      unverified: enriched.filter((u) => u.verification === "unverified").length,
+      suspended: enriched.filter((u) => u.verification === "suspended").length,
+    };
+
+    return apiSuccess({ users: enriched, stats, serverTime: now });
   } catch (error) {
     return handleApiError(error);
   }
@@ -68,6 +132,8 @@ export async function POST(request: NextRequest) {
       metadata: { username: user.username, passwordStrength: passwordCheck.score },
       ip,
     });
+
+    void publishToAdmins({ type: "user_registered", userId: user.id, at: Date.now() });
 
     return apiSuccess({ user: { ...user, passwordHash: undefined } });
   } catch (error) {
@@ -162,6 +228,8 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
+    void publishToAdmins({ type: "user_updated", userId: body.id, at: Date.now() });
+
     return apiSuccess({ updated: true });
   } catch (error) {
     return handleApiError(error);
@@ -202,6 +270,8 @@ export async function DELETE(request: NextRequest) {
       metadata: { deleteData },
       ip,
     });
+
+    void publishToAdmins({ type: "user_deleted", userId: id, at: Date.now() });
 
     return apiSuccess({ deleted: true });
   } catch (error) {

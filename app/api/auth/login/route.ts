@@ -18,6 +18,7 @@ import { peekRateLimit, checkRateLimit, resetRateLimit } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { notifyUser } from "@/lib/email/notify-user";
 import { getIpLocation } from "@/lib/access-tracking";
+import { publishToAdmins } from "@/lib/realtime/events";
 import {
   createPending2faToken,
   verifyPending2faToken,
@@ -165,6 +166,13 @@ export async function POST(request: NextRequest) {
         metadata: { userAgent, success: true, via2fa: true, newDevice },
       });
 
+      void publishToAdmins({
+        type: "user_presence",
+        userId: pendingUser.id,
+        online: true,
+        at: Date.now(),
+      });
+
       if (newDevice) {
         void notifyNewLogin(pendingUser.id, ip, userAgent);
       }
@@ -307,6 +315,13 @@ export async function POST(request: NextRequest) {
       metadata: { userAgent, success: true, newDevice },
     });
 
+    void publishToAdmins({
+      type: "user_presence",
+      userId: user.id,
+      online: true,
+      at: Date.now(),
+    });
+
     if (newDevice) {
       void notifyNewLogin(user.id, ip, userAgent);
     }
@@ -339,6 +354,9 @@ export async function DELETE() {
       await logActivity(user, "logout");
     }
     await destroySession();
+    if (user) {
+      void publishToAdmins({ type: "user_updated", userId: user.id, at: Date.now() });
+    }
     return apiSuccess({ message: "Logged out" });
   } catch (error) {
     return handleApiError(error);

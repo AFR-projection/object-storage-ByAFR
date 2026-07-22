@@ -12,7 +12,7 @@ import {
 import { validateCsrf } from "@/lib/security";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { logActivity } from "@/lib/auth/audit";
-import { publishToUser } from "@/lib/realtime/events";
+import { publishToUser, publishToAdmins } from "@/lib/realtime/events";
 
 function truncateId(id: string): string {
   if (id.length <= 10) return id;
@@ -78,6 +78,7 @@ export async function DELETE(request: NextRequest) {
         reason: "revoke_all",
         wasCurrent: true,
       }).catch(() => {});
+      void publishToAdmins({ type: "user_updated", userId: user.id, at: Date.now() });
       return apiSuccess({ revoked: "all" });
     }
 
@@ -94,6 +95,7 @@ export async function DELETE(request: NextRequest) {
       reason: "revoke_others",
       wasCurrent: false,
     }).catch(() => {});
+    void publishToAdmins({ type: "user_updated", userId: user.id, at: Date.now() });
 
     return apiSuccess({ revoked: "others" });
   } catch (error) {

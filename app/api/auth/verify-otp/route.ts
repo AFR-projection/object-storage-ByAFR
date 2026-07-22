@@ -8,6 +8,7 @@ import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { verifyOTP, normalizeEmail } from "@/lib/email/email-service";
 import { createSession, getClientIp } from "@/lib/auth/session";
 import { logActivity } from "@/lib/auth/audit";
+import { publishToAdmins } from "@/lib/realtime/events";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,9 @@ export async function POST(request: NextRequest) {
     if (user.status !== "active") {
       await db.update(users).set({ status: "active" }).where(eq(users.id, user.id));
     }
+
+    // Account just went from pending → active: reflect it live in the admin panel.
+    void publishToAdmins({ type: "user_verified", userId: user.id, at: Date.now() });
 
     const ip = getClientIp(request);
     await createSession(user.id, ip, request.headers.get("user-agent") ?? undefined);

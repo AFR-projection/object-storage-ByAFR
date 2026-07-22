@@ -10,6 +10,7 @@ import { getAdminSettings, defaultQuotaBytes } from "@/lib/admin-settings";
 import { validatePasswordStrength } from "@/lib/security/password-policy";
 import { sendOTP, normalizeEmail } from "@/lib/email/email-service";
 import { getClientIp } from "@/lib/auth/session";
+import { publishToAdmins } from "@/lib/realtime/events";
 
 export const runtime = "nodejs";
 
@@ -84,6 +85,9 @@ export async function POST(request: NextRequest) {
         503
       );
     }
+
+    // New pending account — surface it live in the admin User Management panel.
+    void publishToAdmins({ type: "user_registered", userId: user.id, at: Date.now() });
 
     return apiSuccess({
       userId: user.id,
